@@ -1,1 +1,1318 @@
+local SUPPORTED_PLACE_ID = 70862359496750
 
+if game.PlaceId ~= SUPPORTED_PLACE_ID then
+    print("[Catsix]: Game not Supported")
+    return
+end
+
+print("[Catsix] Game Supported")
+
+local WindUI
+local ok, err = pcall(function()
+    WindUI = loadstring(game:HttpGet("https://github.com/Footagesus/WindUI/releases/latest/download/main.lua"))()
+end)
+a
+if not ok or not WindUI then
+    warn("[Catsix] Failed to load WindUI: " .. tostring(err))
+    return
+end
+
+local Players = game:GetService("Players")
+local UIS = game:GetService("UserInputService")
+local Workspace = game:GetService("Workspace")
+local RunService = game:GetService("RunService")
+local Lighting = game:GetService("Lighting")
+local TeleportService = game:GetService("TeleportService")
+local HttpService = game:GetService("HttpService")
+
+local lp = Players.LocalPlayer
+
+local Settings = {
+    ShootEnabled = true,
+    SpeedEnabled = false,
+    WalkSpeed = 16,
+    JumpEnabled = false,
+    JumpPower = 50,
+    JumpHeight = 7.2,
+    GravityEnabled = false,
+    Gravity = 196.2,
+    InfJump = false,
+    Noclip = false,
+    ESPEnabled = false,
+    FOVEnabled = false,
+    FOV = 70,
+    Fullbright = false,
+    NoFog = false,
+    AntiAFK = false,
+}
+
+local RNAMES = {"Shoot","Fire","Throw","ShootEvent","FireEvent","Attack","Hit","Damage","Projectile","Slash"}
+local KEY = Enum.KeyCode.E
+local CD = 0.03
+local last = 0
+
+local function remoteOf(tool)
+    for _, n in ipairs(RNAMES) do
+        local r = tool:FindFirstChild(n, true)
+        if r and r:IsA("RemoteEvent") then
+            return r
+        end
+    end
+    return nil
+end
+
+local function alive(v)
+    if v == lp then return false end
+    if not v.Character then return false end
+    if v.Character:FindFirstChildOfClass("ForceField") then return false end
+    local hum = v.Character:FindFirstChildOfClass("Humanoid")
+    if not hum then return false end
+    if hum.Health <= 0 then return false end
+    local hr = v.Character:FindFirstChild("HumanoidRootPart")
+    if not hr then return false end
+    return true
+end
+
+local function clearShot(from, part, char)
+    local p = RaycastParams.new()
+    p.FilterType = Enum.RaycastFilterType.Exclude
+    p.FilterDescendantsInstances = {lp.Character}
+    p.IgnoreWater = true
+    local dir = part.Position - from
+    if dir.Magnitude < 1 then return true end
+    local hit = Workspace:Raycast(from, dir, p)
+    if not hit then return true end
+    if hit.Instance and hit.Instance:IsDescendantOf(char) then return true end
+    return false
+end
+
+local function closestVisible(pos, from)
+    local best = nil
+    local bd = math.huge
+    for _, v in ipairs(Players:GetPlayers()) do
+        if not alive(v) then continue end
+        local ch = v.Character
+        if not ch then continue end
+        local hr = ch:FindFirstChild("HumanoidRootPart")
+        if not hr then continue end
+        local m = (hr.Position - pos).Magnitude
+        if m >= bd then continue end
+        local head = ch:FindFirstChild("Head")
+        local ok = false
+        if head and clearShot(from, head, ch) then ok = true end
+        if not ok then if clearShot(from, hr, ch) then ok = true end end
+        if not ok then continue end
+        bd = m
+        best = v
+    end
+    return best
+end
+
+local function getGun()
+    local c = lp.Character
+    if not c then return nil, nil end
+    for _, t in ipairs(c:GetChildren()) do
+        if t:IsA("Tool") and remoteOf(t) then
+            return t, remoteOf(t)
+        end
+    end
+    local pack = lp:FindFirstChildOfClass("Backpack")
+    if pack then
+        for _, t in ipairs(pack:GetChildren()) do
+            if not t:IsA("Tool") then continue end
+            local r = remoteOf(t)
+            if not r then continue end
+            local hum = c:FindFirstChildOfClass("Humanoid")
+            if hum then pcall(function() hum:EquipTool(t) end) task.wait(0.08) end
+            local eq = c:FindFirstChild(t.Name)
+            if eq then
+                local er = remoteOf(eq)
+                if er then return eq, er end
+            end
+            return t, r
+        end
+    end
+    return nil, nil
+end
+
+local function tt()
+    local p = 0
+    pcall(function() p = lp:GetNetworkPing() end)
+    if p > 2 then p = p / 1000 end
+    local t = 0.15 + (p or 0) * 0.7
+    if t > 0.32 then t = 0.32 end
+    if t < 0.05 then t = 0.05 end
+    return t
+end
+
+local function shoot()
+    if Settings.ShootEnabled == false then return end
+    if tick() - last < CD then return end
+    local c = lp.Character
+    if not c then return end
+    local root = c:FindFirstChild("HumanoidRootPart")
+    if not root then return end
+    local headMe = c:FindFirstChild("Head")
+    local from = root.Position
+    if headMe then from = headMe.Position end
+    local target = closestVisible(root.Position, from)
+    if not target then return end
+    local tch = target.Character
+    if not tch then return end
+    local tool, remote = getGun()
+    if not tool then return end
+    if not remote then return end
+    local hr = tch:FindFirstChild("HumanoidRootPart")
+    if not hr then return end
+    local head = tch:FindFirstChild("Head")
+    local upper = tch:FindFirstChild("UpperTorso") or tch:FindFirstChild("Torso")
+    local enemyHum = tch:FindFirstChildOfClass("Humanoid")
+    local air = false
+    if enemyHum and enemyHum.FloorMaterial == Enum.Material.Air then air = true end
+    if math.abs(hr.Velocity.Y) > 8 then air = true end
+    local parts = {}
+    if hr then table.insert(parts, hr) end
+    if head then table.insert(parts, head) end
+    if upper then table.insert(parts, upper) end
+    local t = tt()
+    local aims = {}
+    for _, part in ipairs(parts) do
+        if part and clearShot(from, part, tch) then
+            local vel = part.Velocity
+            if vel.Magnitude > 80 then vel = vel.Unit * 20 end
+            table.insert(aims, part.Position + vel * t + Vector3.new(0, 0.15, 0))
+            table.insert(aims, part.Position + vel * (t + 0.05) + Vector3.new(0, 0.15, 0))
+            table.insert(aims, part.Position + vel * (t + 0.1) + Vector3.new(0, 0.15, 0))
+            if air then
+                table.insert(aims, part.Position + vel * t + Vector3.new(0, 0.15 - 98 * t * t, 0))
+                table.insert(aims, part.Position + vel * (t + 0.08) + Vector3.new(0, 0.15 - 98 * (t + 0.08) * (t + 0.08), 0))
+                table.insert(aims, part.Position + Vector3.new(0, 1, 0))
+                table.insert(aims, part.Position + Vector3.new(0, -1, 0))
+            end
+        end
+    end
+    if #aims == 0 then return end
+    last = tick()
+    local hand = c:FindFirstChild("RightHand")
+    if not hand then hand = root end
+    local origin = CFrame.new(hand.Position)
+    for _, a in ipairs(aims) do
+        pcall(function() remote:FireServer(origin, CFrame.new(a)) end)
+        pcall(function() remote:FireServer(a) end)
+        pcall(function() remote:FireServer(tch, a) end)
+    end
+    for i = 1, 10 do pcall(function() remote:FireServer(origin, CFrame.new(aims[1])) end) end
+end
+
+UIS.InputBegan:Connect(function(i, g)
+    if g then return end
+    if i.KeyCode == KEY then task.spawn(shoot) end
+end)
+
+UIS.JumpRequest:Connect(function()
+    if Settings.InfJump then
+        local c = lp.Character
+        local hum = c and c:FindFirstChildOfClass("Humanoid")
+        if hum then
+            hum:ChangeState(Enum.HumanoidStateType.Jumping)
+        end
+    end
+end)
+
+local function CatsixApplyStats(hum)
+    pcall(function()
+        if Settings.SpeedEnabled then
+            hum.WalkSpeed = Settings.WalkSpeed
+        end
+        if Settings.JumpEnabled then
+            pcall(function() hum.JumpPower = Settings.JumpPower end)
+            pcall(function() hum.JumpHeight = Settings.JumpHeight end)
+            if hum.UseJumpPower == false then
+                hum.JumpHeight = Settings.JumpHeight
+            else
+                hum.JumpPower = Settings.JumpPower
+            end
+        end
+    end)
+end
+
+lp.CharacterAdded:Connect(function(ch)
+    task.wait(0.5)
+    pcall(function()
+        local hum = ch:WaitForChild("Humanoid", 5)
+        if hum then
+            CatsixApplyStats(hum)
+        end
+    end)
+end)
+
+RunService.Stepped:Connect(function()
+    local c = lp.Character
+    if not c then return end
+    local hum = c:FindFirstChildOfClass("Humanoid")
+    if hum then
+        if Settings.SpeedEnabled then
+            if hum.WalkSpeed ~= Settings.WalkSpeed then
+                hum.WalkSpeed = Settings.WalkSpeed
+            end
+        end
+        if Settings.JumpEnabled then
+            pcall(function()
+                if hum.UseJumpPower then
+                    if hum.JumpPower ~= Settings.JumpPower then
+                        hum.JumpPower = Settings.JumpPower
+                    end
+                else
+                    if hum.JumpHeight ~= Settings.JumpHeight then
+                        hum.JumpHeight = Settings.JumpHeight
+                    end
+                end
+            end)
+        end
+    end
+    if Settings.Noclip then
+        for _, v in ipairs(c:GetDescendants()) do
+            if v:IsA("BasePart") and v.CanCollide then
+                v.CanCollide = false
+            end
+        end
+    end
+end)
+
+task.spawn(function()
+    while true do
+        pcall(function()
+            if Settings.GravityEnabled then
+                if Workspace.Gravity ~= Settings.Gravity then
+                    Workspace.Gravity = Settings.Gravity
+                end
+            end
+        end)
+        task.wait(1)
+    end
+end)
+
+local function applyESP(player)
+    if player == lp then return end
+    local ch = player.Character
+    if not ch then return end
+    if Settings.ESPEnabled then
+        if not ch:FindFirstChild("CatsixESP") then
+            local hl = Instance.new("Highlight")
+            hl.Name = "CatsixESP"
+            hl.FillTransparency = 0.5
+            hl.OutlineTransparency = 0
+            hl.FillColor = Color3.fromRGB(0, 255, 0)
+            hl.OutlineColor = Color3.fromRGB(0, 255, 0)
+            hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+            hl.Parent = ch
+        end
+    else
+        local old = ch:FindFirstChild("CatsixESP")
+        if old then old:Destroy() end
+    end
+end
+
+task.spawn(function()
+    while true do
+        for _, p in ipairs(Players:GetPlayers()) do
+            pcall(applyESP, p)
+        end
+        task.wait(1)
+    end
+end)
+
+Players.PlayerAdded:Connect(function(p)
+    p.CharacterAdded:Connect(function()
+        task.wait(1)
+        pcall(applyESP, p)
+    end)
+end)
+
+task.spawn(function()
+    while true do
+        pcall(function()
+            if Settings.Fullbright then
+                Lighting.Ambient = Color3.fromRGB(255, 255, 255)
+                Lighting.Brightness = 2
+                Lighting.GlobalShadows = false
+            end
+            if Settings.NoFog then
+                Lighting.FogEnd = 100000
+                Lighting.FogStart = 0
+            end
+            local cam = Workspace.CurrentCamera
+            if Settings.FOVEnabled and cam and cam.FieldOfView ~= Settings.FOV then
+                cam.FieldOfView = Settings.FOV
+            end
+        end)
+        task.wait(0.5)
+    end
+end)
+
+local VirtualUser = nil
+pcall(function() VirtualUser = game:GetService("VirtualUser") end)
+if VirtualUser then
+    Players.LocalPlayer.Idled:Connect(function()
+        if Settings.AntiAFK then
+            VirtualUser:CaptureController()
+            VirtualUser:ClickButton2(Vector2.new())
+        end
+    end)
+end
+
+pcall(function()
+    WindUI:AddTheme({
+        Name = "Catsix Black",
+        Accent = Color3.fromHex("#000000"),
+        Background = Color3.fromHex("#0a0a0a"),
+        Outline = Color3.fromHex("#1c1c1c"),
+        Text = Color3.fromHex("#ffffff"),
+        Placeholder = Color3.fromHex("#7a7a7a"),
+        Button = Color3.fromHex("#171717"),
+        Icon = Color3.fromHex("#ffffff"),
+    })
+end)
+pcall(function()
+    WindUI:SetTheme("Catsix Black")
+end)
+
+local SpyOn = false
+local CatsixOldNamecall = nil
+
+local function CatsixFullName(inst)
+    local ok2, res = pcall(function() return inst:GetFullName() end)
+    if ok2 and res then return res end
+    return inst.Name
+end
+
+local function CatsixFindRemotes()
+    local found = {}
+    pcall(function()
+        for _, d in ipairs(game:GetDescendants()) do
+            if d:IsA("RemoteEvent") or d:IsA("RemoteFunction") or d:IsA("BindableEvent") or d:IsA("BindableFunction") then
+                table.insert(found, d)
+            end
+        end
+    end)
+    return found
+end
+
+local function CatsixScanPrint()
+    local found = CatsixFindRemotes()
+    local lines = {}
+    for _, r in ipairs(found) do
+        table.insert(lines, r.ClassName .. " | " .. CatsixFullName(r))
+    end
+    print("[Catsix] Remotes found: " .. tostring(#found))
+    for _, ln in ipairs(lines) do
+        print("[Catsix Remote] " .. ln)
+    end
+    if setclipboard then
+        pcall(function() setclipboard(table.concat(lines, "\n")) end)
+    end
+    return found
+end
+
+
+local function CatsixEnableSpy()
+    if CatsixOldNamecall ~= nil then return end
+    pcall(function()
+        for _, r in ipairs(CatsixFindRemotes()) do
+            if r:IsA("RemoteEvent") then
+                pcall(function()
+                    r.OnClientEvent:Connect(function(...)
+                        if SpyOn then
+                            print("[Catsix Spy In] " .. CatsixFullName(r))
+                        end
+                    end)
+                end)
+            end
+        end
+    end)
+    pcall(function()
+        if hookmetamethod and getnamecallmethod and newcclosure and checkcaller and getrawmetatable then
+            local mt = getrawmetatable(game)
+            if mt then
+                pcall(function() setreadonly(mt, false) end)
+                CatsixOldNamecall = mt.__namecall
+                mt.__namecall = newcclosure(function(self, ...)
+                    local m = getnamecallmethod()
+                    if SpyOn then
+                        pcall(function()
+                            if checkcaller() == false then
+                                if m == "FireServer" or m == "InvokeServer" then
+                                    if self and (self.ClassName == "RemoteEvent" or self.ClassName == "RemoteFunction") then
+                                        print("[Catsix Spy] " .. m .. " | " .. CatsixFullName(self))
+                                    end
+                                end
+                            end
+                        end)
+                    end
+                    return CatsixOldNamecall(self, ...)
+                end)
+                pcall(function() setreadonly(mt, true) end)
+            end
+        end
+    end)
+end
+
+
+
+
+
+
+
+
+
+local function CatsixDeepScan()
+    local out = {}
+    local function push(s) table.insert(out, s) end
+    pcall(function() push("PLACE " .. tostring(game.PlaceId)) end)
+    pcall(function() push("JOB " .. tostring(game.JobId)) end)
+    pcall(function() push("PLAYERS " .. tostring(#Players:GetPlayers())) end)
+    pcall(function()
+        local names = {}
+        for _, p in ipairs(Players:GetPlayers()) do
+            table.insert(names, p.Name)
+        end
+        push("NAMES " .. table.concat(names, ", "))
+    end)
+    pcall(function()
+        push("REPLICATED_TOP:")
+        local rs = game:GetService("ReplicatedStorage")
+        local n = 0
+        for _, d in ipairs(rs:GetChildren()) do
+            n = n + 1
+            if n <= 80 then
+                push("  " .. d.ClassName .. " | " .. d.Name)
+            end
+        end
+        push("  TOTAL_TOP " .. tostring(n))
+    end)
+    pcall(function()
+        push("REMOTES:")
+        local n = 0
+        for _, d in ipairs(game:GetDescendants()) do
+            if d:IsA("RemoteEvent") or d:IsA("RemoteFunction") then
+                n = n + 1
+                if n <= 150 then
+                    local full = d.Name
+                    pcall(function() full = d:GetFullName() end)
+                    push("  " .. d.ClassName .. " | " .. d.Name .. " | " .. full)
+                end
+            end
+        end
+        push("  TOTAL_REMOTES " .. tostring(n))
+    end)
+    pcall(function()
+        push("TOOLS:")
+        for _, d in ipairs(game:GetDescendants()) do
+            if d:IsA("Tool") then
+                local full = d.Name
+                pcall(function() full = d:GetFullName() end)
+                local rem = {}
+                for _, c in ipairs(d:GetDescendants()) do
+                    if c:IsA("RemoteEvent") or c:IsA("RemoteFunction") then
+                        table.insert(rem, c.ClassName .. ":" .. c.Name)
+                    end
+                end
+                push("  Tool | " .. d.Name .. " | " .. full .. " | remotes [" .. table.concat(rem, ", ") .. "]")
+            end
+        end
+    end)
+    pcall(function()
+        local pack = lp:FindFirstChildOfClass("Backpack")
+        if pack then
+            push("BACKPACK:")
+            for _, t in ipairs(pack:GetChildren()) do
+                push("  " .. t.ClassName .. " | " .. t.Name)
+            end
+        end
+        if lp.Character then
+            push("CHARACTER:")
+            for _, t in ipairs(lp.Character:GetChildren()) do
+                if t:IsA("Tool") or t:IsA("Humanoid") then
+                    push("  " .. t.ClassName .. " | " .. t.Name)
+                end
+            end
+        end
+    end)
+    pcall(function()
+        local ls = lp:FindFirstChild("leaderstats")
+        if ls then
+            push("LEADERSTATS:")
+            for _, v in ipairs(ls:GetChildren()) do
+                push("  " .. v.ClassName .. " | " .. v.Name .. " | " .. tostring(v.Value))
+            end
+        else
+            push("LEADERSTATS none")
+        end
+    end)
+    local txt = table.concat(out, "\n")
+    print("[Catsix Scan] len " .. tostring(string.len(txt)))
+    print(txt)
+    if setclipboard then
+        pcall(function() setclipboard(txt) end)
+    end
+    pcall(function()
+        if writefile then
+            writefile("CatsixScan.txt", txt)
+        end
+    end)
+    return txt
+end
+
+local FarmOn = false
+local FollowOn = false
+local TpTarget = nil
+
+local function farmTool(c)
+    for _, t in ipairs(c:GetChildren()) do
+        if t:IsA("Tool") then
+            local nm = string.lower(t.Name)
+            if not string.find(nm, "fake") and not string.find(nm, "bomb") then
+                return t
+            end
+        end
+    end
+    local pack = lp:FindFirstChildOfClass("Backpack")
+    if pack then
+        for _, t in ipairs(pack:GetChildren()) do
+            if t:IsA("Tool") then
+                local nm = string.lower(t.Name)
+                if not string.find(nm, "fake") and not string.find(nm, "bomb") then
+                    local hum = c:FindFirstChildOfClass("Humanoid")
+                    if hum then pcall(function() hum:EquipTool(t) end) end
+                    task.wait(0.15)
+                    local eq = c:FindFirstChild(t.Name)
+                    if eq then return eq end
+                end
+            end
+        end
+    end
+    return nil
+end
+
+local function farmStep()
+    local c = lp.Character
+    if not c then return end
+    local root = c:FindFirstChild("HumanoidRootPart")
+    if not root then return end
+    local from = root.Position
+    local hm = c:FindFirstChild("Head")
+    if hm then from = hm.Position end
+    local target = closestVisible(root.Position, from)
+    if not target or not target.Character then return end
+    local tch = target.Character
+    local thr = tch:FindFirstChild("HumanoidRootPart")
+    if not thr then return end
+    for _, v in ipairs(c:GetDescendants()) do
+        if v:IsA("BasePart") then
+            v.CanCollide = false
+        end
+    end
+    pcall(function()
+        root.CFrame = thr.CFrame * CFrame.new(0, -4, 0)
+    end)
+    local tool = farmTool(c)
+    if not tool then return end
+    pcall(function() tool:Activate() end)
+    pcall(function() tool:Activate() end)
+end
+
+task.spawn(function()
+    while true do
+        if FarmOn then
+            pcall(farmStep)
+            task.wait(0.15)
+        else
+            task.wait(0.3)
+        end
+    end
+end)
+
+local function tpNames()
+    local n = {}
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p ~= lp then table.insert(n, p.Name) end
+    end
+    if #n == 0 then table.insert(n, "none") end
+    return n
+end
+
+local function tpTo(name)
+    if not name or name == "none" then return false end
+    local p = Players:FindFirstChild(name)
+    if not p or not p.Character then return false end
+    local thr = p.Character:FindFirstChild("HumanoidRootPart")
+    local c = lp.Character
+    local root = c and c:FindFirstChild("HumanoidRootPart")
+    if not thr or not root then return false end
+    pcall(function()
+        root.CFrame = thr.CFrame + Vector3.new(0, 3, 0)
+    end)
+    return true
+end
+
+task.spawn(function()
+    while true do
+        if FollowOn and TpTarget then
+            pcall(function() tpTo(TpTarget) end)
+            task.wait(0.5)
+        else
+            task.wait(0.5)
+        end
+    end
+end)
+
+local FlyOn = false
+local FlySpeed = 50
+local FlyUp = false
+local FlyDown = false
+
+UIS.InputBegan:Connect(function(i, g)
+    if g then return end
+    if i.KeyCode == Enum.KeyCode.Space then FlyUp = true end
+    if i.KeyCode == Enum.KeyCode.C then FlyDown = true end
+end)
+
+UIS.InputEnded:Connect(function(i)
+    if i.KeyCode == Enum.KeyCode.Space then FlyUp = false end
+    if i.KeyCode == Enum.KeyCode.C then FlyDown = false end
+end)
+
+local function flyEnsure(c, root)
+    local bv = root:FindFirstChild("CatsixFlyV")
+    local bg = root:FindFirstChild("CatsixFlyG")
+    if not bv then
+        bv = Instance.new("BodyVelocity")
+        bv.Name = "CatsixFlyV"
+        bv.MaxForce = Vector3.new(9e9, 9e9, 9e9)
+        bv.Velocity = Vector3.new(0, 0, 0)
+        bv.Parent = root
+    end
+    if not bg then
+        bg = Instance.new("BodyGyro")
+        bg.Name = "CatsixFlyG"
+        bg.MaxTorque = Vector3.new(9e9, 9e9, 9e9)
+        bg.P = 9000
+        bg.Parent = root
+    end
+    return bv, bg
+end
+
+local function flyOff()
+    local c = lp.Character
+    local root = c and c:FindFirstChild("HumanoidRootPart")
+    if root then
+        local bv = root:FindFirstChild("CatsixFlyV")
+        if bv then bv:Destroy() end
+        local bg = root:FindFirstChild("CatsixFlyG")
+        if bg then bg:Destroy() end
+    end
+    FlyUp = false
+    FlyDown = false
+end
+
+RunService.Heartbeat:Connect(function()
+    if not FlyOn then return end
+    local c = lp.Character
+    if not c then return end
+    local root = c:FindFirstChild("HumanoidRootPart")
+    local hum = c:FindFirstChildOfClass("Humanoid")
+    if not root or not hum then return end
+    local bv, bg = flyEnsure(c, root)
+    local dir = hum.MoveDirection * FlySpeed
+    if FlyUp then dir = dir + Vector3.new(0, FlySpeed, 0) end
+    if FlyDown then dir = dir + Vector3.new(0, -FlySpeed, 0) end
+    bv.Velocity = dir
+    local cam = Workspace.CurrentCamera
+    if cam then
+        bg.CFrame = CFrame.new(root.Position, root.Position + cam.CFrame.LookVector)
+    end
+end)
+
+local UILoaded = false
+local Window = nil
+
+local function BuildUI()
+    if UILoaded then return end
+    UILoaded = true
+
+    Window = WindUI:CreateWindow({
+        Title = "Catsix",
+        Icon = "cat",
+        Author = "5v5 Aim Trainer | v1.0",
+        Folder = "Catsix",
+        Size = UDim2.fromOffset(580, 460),
+        MinSize = Vector2.new(560, 350),
+        MaxSize = Vector2.new(850, 560),
+        ToggleKey = Enum.KeyCode.K,
+        Transparent = true,
+        Theme = "Catsix Black",
+        Resizable = true,
+        SideBarWidth = 200,
+        HideSearchBar = false,
+        ScrollBarEnabled = true,
+        Topbar = {
+            Height = 44,
+            ButtonsType = "Default",
+        },
+    })
+
+    pcall(function()
+        Window:Tag({
+            Title = "Catsix",
+            Icon = "cat",
+            Color = Color3.fromHex("#000000"),
+        })
+        Window:Tag({
+            Title = "Game Supported",
+            Icon = "check",
+            Color = Color3.fromHex("#000000"),
+        })
+    end)
+
+    local HomeTab = Window:Tab({ Title = "Home", Icon = "home" })
+    local CombatTab = Window:Tab({ Title = "Combat", Icon = "crosshair" })
+    local FarmTab = Window:Tab({ Title = "Farm", Icon = "swords" })
+    local PlayerTab = Window:Tab({ Title = "Player", Icon = "user" })
+    local VisualTab = Window:Tab({ Title = "Visual", Icon = "eye" })
+    local MiscTab = Window:Tab({ Title = "Misc", Icon = "package" })
+    local SettingsTab = Window:Tab({ Title = "Settings", Icon = "settings" })
+
+    do
+        HomeTab:Paragraph({
+            Title = "Catsix Loaded",
+            Desc = "Welcome to Catsix | 5v5 Aim Trainer (70862359496750). Press E (default) to Shoot.",
+        })
+
+        HomeTab:Paragraph({
+            Title = "Status",
+            Desc = "Game: 5v5 Aim Trainer | Supported: YES | UI: WindUI Default (Black + Transparent)",
+        })
+
+        HomeTab:Button({
+            Title = "Test Shoot Once",
+            Desc = "Fires one manual shoot cycle",
+            Icon = "zap",
+            Callback = function()
+                task.spawn(shoot)
+                WindUI:Notify({ Title = "Catsix", Content = "Shoot fired!", Duration = 2, Icon = "zap" })
+            end,
+        })
+
+        HomeTab:Button({
+            Title = "Copy Game Link",
+            Desc = "Copy 5v5 Aim Trainer link",
+            Icon = "link",
+            Callback = function()
+                if setclipboard then
+                    setclipboard("https://www.roblox.com/games/70862359496750/5v5-Aim-Trainer")
+                    WindUI:Notify({ Title = "Catsix", Content = "Game link copied!", Duration = 2, Icon = "check" })
+                end
+            end,
+        })
+    end
+
+    do
+        local ShootSec = CombatTab:Section({ Title = "Shoot", Opened = true })
+
+        ShootSec:Toggle({
+            Title = "Enable Shoot",
+            Desc = "Master switch for E shoot",
+            Icon = "crosshair",
+            Type = "Checkbox",
+            Value = true,
+            Flag = "ShootEnabled",
+            Callback = function(v) Settings.ShootEnabled = v end,
+        })
+
+        ShootSec:Keybind({
+            Title = "Shoot Key",
+            Desc = "Key to trigger Shoot",
+            Value = "E",
+            Flag = "ShootKey",
+            Callback = function(v)
+                pcall(function()
+                    KEY = Enum.KeyCode[v]
+                end)
+            end,
+        })
+    end
+
+    do
+        local FarmSec = FarmTab:Section({ Title = "Kill All", Opened = true })
+
+        FarmSec:Toggle({
+            Title = "Kill All Farm",
+            Desc = "Teleport under enemy, equip non bomb weapon, auto click",
+            Icon = "swords",
+            Value = false,
+            Flag = "FarmOn",
+            Callback = function(v)
+                FarmOn = v
+                WindUI:Notify({
+                    Title = "Catsix Farm",
+                    Content = v and "Farm ON" or "Farm OFF",
+                    Duration = 2,
+                    Icon = "swords",
+                })
+            end,
+        })
+
+        FarmSec:Button({
+            Title = "Stop Farm",
+            Callback = function()
+                FarmOn = false
+            end,
+        })
+    end
+
+    do
+        local MoveSec = PlayerTab:Section({ Title = "Movement", Opened = true })
+
+        MoveSec:Toggle({
+            Title = "Speed Enabled",
+            Desc = "Lock WalkSpeed to slider",
+            Value = false,
+            Flag = "SpeedEnabled",
+            Callback = function(v) Settings.SpeedEnabled = v end,
+        })
+
+        MoveSec:Slider({
+            Title = "WalkSpeed",
+            Step = 1,
+            Value = { Min = 16, Max = 250, Default = 16 },
+            Flag = "WalkSpeed",
+            Callback = function(v)
+                Settings.WalkSpeed = v
+                local hum = lp.Character and lp.Character:FindFirstChildOfClass("Humanoid")
+                if hum and Settings.SpeedEnabled then hum.WalkSpeed = v end
+            end,
+        })
+
+        MoveSec:Toggle({
+            Title = "JumpPower Enabled",
+            Value = false,
+            Flag = "JumpEnabled",
+            Callback = function(v) Settings.JumpEnabled = v end,
+        })
+
+        MoveSec:Slider({
+            Title = "JumpPower",
+            Step = 1,
+            Value = { Min = 50, Max = 300, Default = 50 },
+            Flag = "JumpPower",
+            Callback = function(v)
+                Settings.JumpPower = v
+                local hum = lp.Character and lp.Character:FindFirstChildOfClass("Humanoid")
+                if hum and Settings.JumpEnabled then
+                    pcall(function() hum.JumpPower = v end)
+                    pcall(function() hum.JumpHeight = Settings.JumpHeight end)
+                end
+            end,
+        })
+
+        MoveSec:Slider({
+            Title = "JumpHeight",
+            Step = 0.5,
+            Value = { Min = 5, Max = 100, Default = 7 },
+            Flag = "JumpHeight",
+            Callback = function(v)
+                Settings.JumpHeight = v
+                local hum2 = lp.Character and lp.Character:FindFirstChildOfClass("Humanoid")
+                if hum2 and Settings.JumpEnabled then
+                    pcall(function() hum2.JumpHeight = v end)
+                end
+            end,
+        })
+
+        MoveSec:Toggle({
+            Title = "Gravity Enabled",
+            Value = false,
+            Flag = "GravityEnabled",
+            Callback = function(v) Settings.GravityEnabled = v end,
+        })
+
+        MoveSec:Slider({
+            Title = "Gravity",
+            Step = 1,
+            Value = { Min = 0, Max = 500, Default = 196 },
+            Flag = "Gravity",
+            Callback = function(v)
+                Settings.Gravity = v
+                if Settings.GravityEnabled then
+                    pcall(function() Workspace.Gravity = v end)
+                end
+            end,
+        })
+
+        local UtilSec = PlayerTab:Section({ Title = "Utility", Opened = true })
+
+        UtilSec:Toggle({
+            Title = "Infinite Jump",
+            Value = false,
+            Flag = "InfJump",
+            Callback = function(v) Settings.InfJump = v end,
+        })
+
+        UtilSec:Toggle({
+            Title = "Noclip",
+            Desc = "Walk through walls",
+            Value = false,
+            Flag = "Noclip",
+            Callback = function(v) Settings.Noclip = v end,
+        })
+
+        UtilSec:Toggle({
+            Title = "Fly",
+            Desc = "WASD move, Space up, C down",
+            Icon = "plane",
+            Value = false,
+            Flag = "FlyOn",
+            Callback = function(v)
+                FlyOn = v
+                if not v then flyOff() end
+            end,
+        })
+
+        UtilSec:Slider({
+            Title = "Fly Speed",
+            Step = 5,
+            Value = { Min = 10, Max = 200, Default = 50 },
+            Flag = "FlySpeed",
+            Callback = function(v) FlySpeed = v end,
+        })
+
+        UtilSec:Button({
+            Title = "Reset Speed / Jump",
+            Callback = function()
+                Settings.SpeedEnabled = false
+                Settings.JumpEnabled = false
+                Settings.GravityEnabled = false
+                FlyOn = false
+                flyOff()
+                local hum = lp.Character and lp.Character:FindFirstChildOfClass("Humanoid")
+                if hum then
+                    hum.WalkSpeed = 16
+                    pcall(function() hum.JumpPower = 50 end)
+                    pcall(function() hum.JumpHeight = 7.2 end)
+                end
+                Workspace.Gravity = 196.2
+            end,
+        })
+    end
+
+    do
+        local EspSec = VisualTab:Section({ Title = "ESP", Opened = true })
+
+        EspSec:Toggle({
+            Title = "Player ESP (Highlight)",
+            Desc = "Green highlight, loops",
+            Value = false,
+            Flag = "ESPEnabled",
+            Callback = function(v)
+                Settings.ESPEnabled = v
+                if not v then
+                    for _, p in ipairs(Players:GetPlayers()) do
+                        local ch = p.Character
+                        local old = ch and ch:FindFirstChild("CatsixESP")
+                        if old then old:Destroy() end
+                    end
+                end
+            end,
+        })
+
+        local WorldSec = VisualTab:Section({ Title = "World / Camera", Opened = true })
+
+        WorldSec:Toggle({
+            Title = "FOV Enabled",
+            Value = false,
+            Flag = "FOVEnabled",
+            Callback = function(v) Settings.FOVEnabled = v end,
+        })
+
+        WorldSec:Slider({
+            Title = "FOV",
+            Step = 1,
+            Value = { Min = 60, Max = 120, Default = 70 },
+            Flag = "FOV",
+            Callback = function(v)
+                Settings.FOV = v
+                if Settings.FOVEnabled then
+                    local cam = Workspace.CurrentCamera
+                    if cam then pcall(function() cam.FieldOfView = v end) end
+                end
+            end,
+        })
+
+        WorldSec:Toggle({
+            Title = "Fullbright",
+            Value = false,
+            Flag = "Fullbright",
+            Callback = function(v)
+                Settings.Fullbright = v
+                if not v then
+                    Lighting.Ambient = Color3.fromRGB(0, 0, 0)
+                    Lighting.Brightness = 1
+                    Lighting.GlobalShadows = true
+                end
+            end,
+        })
+
+        WorldSec:Toggle({
+            Title = "No Fog",
+            Value = false,
+            Flag = "NoFog",
+            Callback = function(v) Settings.NoFog = v end,
+        })
+    end
+
+    do
+        local PerSec = MiscTab:Section({ Title = "Performance", Opened = true })
+
+        PerSec:Button({
+            Title = "FPS Boost",
+            Desc = "Low graphics for max FPS",
+            Icon = "zap",
+            Callback = function()
+                pcall(function()
+                    Lighting.GlobalShadows = false
+                    Lighting.FogEnd = 9e9
+                    for _, v in ipairs(Workspace:GetDescendants()) do
+                        if v:IsA("BasePart") then
+                            v.Material = Enum.Material.SmoothPlastic
+                            v.Reflectance = 0
+                        elseif v:IsA("ParticleEmitter") or v:IsA("Trail") then
+                            v.Enabled = false
+                        end
+                    end
+                    for _, e in ipairs(Lighting:GetChildren()) do
+                        if e:IsA("PostEffect") or e:IsA("Atmosphere") then
+                            e.Enabled = false
+                        end
+                    end
+                end)
+                WindUI:Notify({ Title = "Catsix", Content = "FPS Boost applied!", Duration = 2, Icon = "check" })
+            end,
+        })
+
+        PerSec:Toggle({
+            Title = "Anti-AFK",
+            Value = false,
+            Flag = "AntiAFK",
+            Callback = function(v) Settings.AntiAFK = v end,
+        })
+
+        local ServSec = MiscTab:Section({ Title = "Server", Opened = true })
+
+        ServSec:Button({
+            Title = "Rejoin Server",
+            Callback = function()
+                TeleportService:TeleportToPlaceInstance(game.PlaceId, game.JobId, lp)
+            end,
+        })
+
+        ServSec:Button({
+            Title = "Server Hop (new server)",
+            Callback = function()
+                TeleportService:Teleport(game.PlaceId, lp)
+            end,
+        })
+
+        ServSec:Button({
+            Title = "Copy JobId",
+            Callback = function()
+                if setclipboard then setclipboard(game.JobId) end
+            end,
+        })
+
+        ServSec:Button({
+            Title = "Unload Catsix",
+            Icon = "trash",
+            Callback = function()
+                Settings.ESPEnabled = false
+                FarmOn = false
+                FollowOn = false
+                FlyOn = false
+                flyOff()
+                if Window then pcall(function() Window:Destroy() end) end
+            end,
+        })
+
+        local TpSec = MiscTab:Section({ Title = "Teleport", Opened = true })
+
+        local TpDrop = TpSec:Dropdown({
+            Title = "Teleport To Player",
+            Values = tpNames(),
+            Value = tpNames()[1],
+            Callback = function(v) TpTarget = v end,
+        })
+
+        TpSec:Button({
+            Title = "Teleport",
+            Icon = "map-pin",
+            Callback = function()
+                local okk = false
+                pcall(function() okk = tpTo(TpTarget) end)
+                WindUI:Notify({ Title = "Catsix", Content = okk and "Teleported" or "Failed", Duration = 2, Icon = "map-pin" })
+            end,
+        })
+
+        TpSec:Button({
+            Title = "Refresh List",
+            Callback = function()
+                pcall(function() TpDrop:Refresh(tpNames()) end)
+            end,
+        })
+
+        TpSec:Toggle({
+            Title = "Follow Player",
+            Value = false,
+            Flag = "FollowOn",
+            Callback = function(v) FollowOn = v end,
+        })
+
+        local ScanSec = MiscTab:Section({ Title = "Scanner", Opened = true })
+
+        ScanSec:Button({
+            Title = "Deep Scan Game (Copy)",
+            Desc = "Dump remotes tools storage, send output to Catsix",
+            Icon = "radar",
+            Callback = function()
+                local txt = ""
+                pcall(function() txt = CatsixDeepScan() end)
+                WindUI:Notify({ Title = "Catsix Scanner", Content = "Scan done, copied len " .. tostring(string.len(txt)), Duration = 3, Icon = "radar" })
+            end,
+        })
+
+        ScanSec:Button({
+            Title = "Find Remotes (Spy)",
+            Desc = "Print plus copy all remote paths",
+            Icon = "radar",
+            Callback = function()
+                local f = {}
+                pcall(function() f = CatsixScanPrint() end)
+                WindUI:Notify({ Title = "Catsix Spy", Content = "Found " .. tostring(#f) .. " remotes, copied", Duration = 3, Icon = "radar" })
+            end,
+        })
+
+        ScanSec:Toggle({
+            Title = "Remote Spy Logger",
+            Desc = "Log FireServer plus InvokeServer live",
+            Value = false,
+            Flag = "SpyLogger",
+            Callback = function(v)
+                SpyOn = v
+                if v then pcall(CatsixEnableSpy) end
+                WindUI:Notify({ Title = "Catsix Spy", Content = v and "Spy ON" or "Spy OFF", Duration = 2, Icon = "eye" })
+            end,
+        })
+    end
+
+    do
+        local UiSec = SettingsTab:Section({ Title = "UI Settings", Opened = true })
+
+        UiSec:Keybind({
+            Title = "UI Toggle Key",
+            Desc = "Show / hide Catsix",
+            Value = "K",
+            Callback = function(v)
+                pcall(function() Window:SetToggleKey(Enum.KeyCode[v]) end)
+            end,
+        })
+
+        UiSec:Dropdown({
+            Title = "Theme",
+            Values = { "Catsix Black", "Dark", "Light" },
+            Value = "Catsix Black",
+            Callback = function(v)
+                pcall(function() WindUI:SetTheme(v) end)
+            end,
+        })
+
+        UiSec:Toggle({
+            Title = "Transparent Window",
+            Desc = "WindUI transparency (black)",
+            Value = true,
+            Callback = function(v)
+                pcall(function()
+                    if Window.ToggleTransparency then
+                        Window:ToggleTransparency(v)
+                    elseif Window.SetTransparent then
+                        Window:SetTransparent(v)
+                    elseif Window.SetTransparency then
+                        Window:SetTransparency(v)
+                    end
+                end)
+            end,
+        })
+
+        local CfgSec = SettingsTab:Section({ Title = "Config", Opened = true })
+
+        local ConfigName = "CatsixConfig"
+        CfgSec:Input({
+            Title = "Config Name",
+            Value = "CatsixConfig",
+            Callback = function(v)
+                if v and v ~= "" then ConfigName = v end
+            end,
+        })
+
+        CfgSec:Button({
+            Title = "Save Config",
+            Icon = "save",
+            Callback = function()
+                pcall(function()
+                    local CM = Window.ConfigManager
+                    local cfg = nil
+                    if CM.CreateConfig then
+                        cfg = CM:CreateConfig(ConfigName)
+                    elseif CM.Config then
+                        cfg = CM:Config(ConfigName)
+                    end
+                    if cfg and cfg.Save then
+                        Window.CurrentConfig = cfg
+                        cfg:Save()
+                    elseif cfg and cfg.SaveConfig then
+                        cfg:SaveConfig()
+                    end
+                end)
+                WindUI:Notify({ Title = "Catsix", Content = "Config saved: " .. tostring(ConfigName), Duration = 2, Icon = "check" })
+            end,
+        })
+
+        CfgSec:Button({
+            Title = "Load Config",
+            Icon = "folder-open",
+            Callback = function()
+                pcall(function()
+                    local CM = Window.ConfigManager
+                    local cfg = nil
+                    if CM.CreateConfig then
+                        cfg = CM:CreateConfig(ConfigName)
+                    elseif CM.Config then
+                        cfg = CM:Config(ConfigName)
+                    end
+                    if cfg and cfg.Load then
+                        Window.CurrentConfig = cfg
+                        cfg:Load()
+                    end
+                end)
+                WindUI:Notify({ Title = "Catsix", Content = "Config loaded: " .. tostring(ConfigName), Duration = 2, Icon = "check" })
+            end,
+        })
+    end
+
+    HomeTab:Select()
+    WindUI:Notify({
+        Title = "Catsix Loaded",
+        Content = "Welcome! Combat is ready. Press E to Shoot.",
+        Duration = 4,
+        Icon = "cat",
+    })
+end
+
+BuildUI()
