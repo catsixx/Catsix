@@ -1,0 +1,5 @@
+if game.PlaceId == 70862359496750 then
+    loadstring(game:HttpGet("https://raw.githubusercontent.com/catsixx/Catsix/main/Games/70862359496750"))()
+else
+    print("Game not supported.")
+end
