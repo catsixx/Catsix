@@ -1,9 +1,14 @@
-local BASE = "https://github.com/catsixx/Catsix/blob/main/Games/70862359496750"
+local BASE = "https://raw.githubusercontent.com/catsixx/Catsix/refs/heads/main/Games/"
 local id = tostring(game.PlaceId)
+print("[Catsix] Checking " .. id .. " ...")
 local src = nil
 pcall(function()
     src = game:HttpGet(BASE .. id)
 end)
+print("[Catsix] Got " .. tostring(src and #src or 0) .. " chars")
+if type(src) == "string" then
+    print("[Catsix] Head: " .. string.sub(src, 1, 60))
+end
 if type(src) == "string" and #src > 50 and string.sub(src, 1, 3) ~= "404" then
     print("[Catsix]: Game Supported (" .. id .. ")")
     local f = nil
@@ -11,9 +16,13 @@ if type(src) == "string" and #src > 50 and string.sub(src, 1, 3) ~= "404" then
         f = loadstring(src)
     end)
     if type(f) == "function" then
-        task.spawn(f)
+        print("[Catsix] Starting game ...")
+        local ok2, rerr = pcall(f)
+        if not ok2 then
+            warn("[Catsix] Game error: " .. tostring(rerr))
+        end
     else
-        print("[Catsix]: Game not Supported")
+        print("[Catsix]: Game not Supported (bad file)")
     end
 else
     print("[Catsix]: Game not Supported")
