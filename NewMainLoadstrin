@@ -1,29 +1,16 @@
-local BASE = "https://raw.githubusercontent.com/catsixx/Catsix/refs/heads/main/Games/"
-local id = tostring(game.PlaceId)
-print("[Catsix] Checking " .. id .. " ...")
-local src = nil
-pcall(function()
-    src = game:HttpGet(BASE .. id)
-end)
-print("[Catsix] Got " .. tostring(src and #src or 0) .. " chars")
-if type(src) == "string" then
-    print("[Catsix] Head: " .. string.sub(src, 1, 60))
-end
-if type(src) == "string" and #src > 50 and string.sub(src, 1, 3) ~= "404" then
-    print("[Catsix]: Game Supported (" .. id .. ")")
-    local f = nil
-    pcall(function()
-        f = loadstring(src)
+-- Check if the current game ID matches
+if game.PlaceId == 70862359496750 then
+    print("Beta fucker it finally work IP: 192.168.1.1 found")
+    
+    -- Option A: Load and run the script directly from your raw GitHub link
+    local success, err = pcall(function()
+        loadstring(game:HttpGet("https://raw.githubusercontent.com/catsixx/Catsix/main/Games/70862359496750"))()
     end)
-    if type(f) == "function" then
-        print("[Catsix] Starting game ...")
-        local ok2, rerr = pcall(f)
-        if not ok2 then
-            warn("[Catsix] Game error: " .. tostring(rerr))
-        end
-    else
-        print("[Catsix]: Game not Supported (bad file)")
+    
+    if not success then
+        warn("Failed to execute script: " .. tostring(err))
     end
+    
 else
-    print("[Catsix]: Game not Supported")
+    print("Fuck this script it not supported nigga")
 end
