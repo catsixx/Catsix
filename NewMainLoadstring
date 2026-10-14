@@ -1,4 +1,4 @@
-local BASE = "https://raw.githubusercontent.com/catsixx/Catsix/refs/heads/main/Games/"
+local BASE = "https://github.com/catsixx/Catsix/blob/main/Games/70862359496750"
 local id = tostring(game.PlaceId)
 local src = nil
 pcall(function()
