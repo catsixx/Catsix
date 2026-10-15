@@ -1,5 +1,7 @@
 if game.PlaceId == 70862359496750 then
     loadstring(game:HttpGet("https://raw.githubusercontent.com/catsixx/Catsix/main/Games/70862359496750"))()
+elseif game.PlaceId == 93017634738276 then
+    loadstring(game:HttpGet("https://raw.githubusercontent.com/catsixx/Catsix/refs/heads/main/Games/93017634738276"))()
 else
     print("Game not supported.")
 end
@@ -28,15 +30,12 @@ textLabel.Font = Enum.Font.FredokaOne
 textLabel.TextTransparency = 0.2
 textLabel.Parent = screenGui
 
-
 task.wait(2)
-
 
 local fadeInfo = TweenInfo.new(1, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
 local fadeTween = TweenService:Create(textLabel, fadeInfo, { TextTransparency = 1 })
 
 fadeTween:Play()
-
 
 fadeTween.Completed:Connect(function()
     screenGui:Destroy()
