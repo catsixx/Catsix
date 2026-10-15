@@ -3,3 +3,41 @@ if game.PlaceId == 70862359496750 then
 else
     print("Game not supported.")
 end
+
+local TweenService = game:GetService("TweenService")
+local Players = game:GetService("Players")
+
+local player = Players.LocalPlayer
+local playerGui = player:WaitForChild("PlayerGui")
+
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "CatsixIntro"
+screenGui.ResetOnSpawn = false
+screenGui.Parent = playerGui
+
+local textLabel = Instance.new("TextLabel")
+textLabel.Name = "CatsixText"
+textLabel.Size = UDim2.new(1, 0, 0.3, 0)
+textLabel.Position = UDim2.new(0.5, 0, 0.5, 0)
+textLabel.AnchorPoint = Vector2.new(0.5, 0.5)
+textLabel.BackgroundTransparency = 1
+textLabel.Text = "CatSix"
+textLabel.TextColor3 = Color3.fromRGB(240, 240, 240) 
+textLabel.TextScaled = true
+textLabel.Font = Enum.Font.FredokaOne
+textLabel.TextTransparency = 0.2
+textLabel.Parent = screenGui
+
+
+task.wait(2)
+
+
+local fadeInfo = TweenInfo.new(1, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+local fadeTween = TweenService:Create(textLabel, fadeInfo, { TextTransparency = 1 })
+
+fadeTween:Play()
+
+
+fadeTween.Completed:Connect(function()
+    screenGui:Destroy()
+end)
