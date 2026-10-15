@@ -11,7 +11,7 @@ local WindUI
 local ok, err = pcall(function()
     WindUI = loadstring(game:HttpGet("https://github.com/Footagesus/WindUI/releases/latest/download/main.lua"))()
 end)
-a
+
 if not ok or not WindUI then
     warn("[Catsix] Failed to load WindUI: " .. tostring(err))
     return
