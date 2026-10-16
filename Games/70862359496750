@@ -23,6 +23,7 @@ local Settings = {
     HitChance = 100,
     HitboxExp = false,
     HitboxSize = 5,
+    HitboxTrans = 0.4,
     KillNotify = false,
     SpeedEnabled = false,
     WalkSpeed = 16,
@@ -202,9 +203,13 @@ local function shoot()
         pcall(function() remote:FireServer(origin, CFrame.new(a)) end)
         pcall(function() remote:FireServer(a) end)
         pcall(function() remote:FireServer(tch, a) end)
+        if Settings.HitChance >= 100 then
+            pcall(function() remote:FireServer(tch) end)
+            pcall(function() remote:FireServer(head or hr) end)
+        end
     end
     local reps = 10
-    if Settings.HitChance >= 100 then reps = 16 end
+    if Settings.HitChance >= 100 then reps = 24 end
     for i = 1, reps do pcall(function() remote:FireServer(origin, CFrame.new(aims[1])) end) end
 end
 
@@ -293,9 +298,13 @@ local function throwKnife()
             pcall(function() stab:FireServer(tch) end)
             pcall(function() stab:FireServer(a) end)
         end
+        if Settings.HitChance >= 100 then
+            pcall(function() thrown:FireServer(tch) end)
+            pcall(function() thrown:FireServer(head or hr) end)
+        end
     end
     local reps = 6
-    if Settings.HitChance >= 100 then reps = 14 end
+    if Settings.HitChance >= 100 then reps = 20 end
     for i = 1, reps do
         pcall(function() thrown:FireServer(origin, CFrame.new(aims[1])) end)
     end
@@ -515,20 +524,21 @@ task.spawn(function()
                                 hr.CanCollide = false
                             end)
                         end
-                        local box = hr:FindFirstChild("CatsixBox")
-                        if showRed and s then
-                            if not box then
-                                box = Instance.new("BoxHandleAdornment")
-                                box.Name = "CatsixBox"
-                                box.Adornee = hr
-                                box.AlwaysOnTop = true
-                                box.ZIndex = 5
-                                box.Transparency = 0.4
-                                box.Color3 = Color3.fromRGB(255, 0, 0)
-                                box.Parent = hr
-                            end
-                            box.Size = Vector3.new(s, s, s)
-                        else
+                            local box = hr:FindFirstChild("CatsixBox")
+                            if showRed and s then
+                                if not box then
+                                    box = Instance.new("BoxHandleAdornment")
+                                    box.Name = "CatsixBox"
+                                    box.Adornee = hr
+                                    box.AlwaysOnTop = true
+                                    box.ZIndex = 5
+                                    box.Transparency = Settings.HitboxTrans
+                                    box.Color3 = Color3.fromRGB(255, 0, 0)
+                                    box.Parent = hr
+                                end
+                                box.Size = Vector3.new(s, s, s)
+                                box.Transparency = Settings.HitboxTrans
+                            else
                             if box then box:Destroy() end
                             if not s and hr.Size ~= Vector3.new(2, 2, 1) then
                                 pcall(function() hr.Size = Vector3.new(2, 2, 1) end)
@@ -539,6 +549,55 @@ task.spawn(function()
             end
         end)
         task.wait(0.5)
+    end
+end)
+
+local CheatOn = false
+local CheatKnown = {}
+
+local function cheatScan()
+    local out = {}
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p ~= lp and p.Character then
+            local hum = p.Character:FindFirstChildOfClass("Humanoid")
+            local hr = p.Character:FindFirstChild("HumanoidRootPart")
+            if hum and hr then
+                local why = {}
+                if hum.WalkSpeed > 30 then table.insert(why, "speed " .. math.floor(hum.WalkSpeed)) end
+                if hum.JumpPower > 75 then table.insert(why, "jump " .. math.floor(hum.JumpPower)) end
+                if hum.JumpHeight > 12 then table.insert(why, "jheight " .. math.floor(hum.JumpHeight)) end
+                if hum.MaxHealth > 150 then table.insert(why, "god " .. math.floor(hum.MaxHealth)) end
+                if hum.PlatformStand then table.insert(why, "fly") end
+                if hr.Size.Magnitude > 5 then table.insert(why, "hitbox") end
+                if hr.AssemblyLinearVelocity.Magnitude > 80 then table.insert(why, "velo") end
+                if #why > 0 then
+                    table.insert(out, p.Name .. " [" .. table.concat(why, ", ") .. "]")
+                end
+            end
+        end
+    end
+    return out
+end
+
+task.spawn(function()
+    while true do
+        if CheatOn then
+            local found = {}
+            pcall(function() found = cheatScan() end)
+            for _, line in ipairs(found) do
+                local nm = line:match("^(%S+)")
+                if nm and not CheatKnown[nm] then
+                    CheatKnown[nm] = true
+                    pcall(function()
+                        WindUI:Notify({ Title = "Cheat Detected", Content = line, Duration = 4, Icon = "shield" })
+                    end)
+                end
+            end
+            task.wait(3)
+        else
+            CheatKnown = {}
+            task.wait(1)
+        end
     end
 end)
 
@@ -582,6 +641,61 @@ if VirtualUser then
     end)
 end
 
+local InvOn = false
+
+local function setInv(on)
+    InvOn = on
+    pcall(function()
+        local c = lp.Character
+        if not c then return end
+        for _, p in ipairs(c:GetDescendants()) do
+            if p:IsA("BasePart") and p.Name ~= "HumanoidRootPart" then
+                if on then p.Transparency = 0.5 else p.Transparency = 0 end
+            end
+        end
+    end)
+end
+
+local FakeGod = false
+local GodCD = 0
+
+pcall(function()
+    local gf = game:GetService("ReplicatedStorage").ClientServices.GunFired
+    if gf then
+        gf.OnClientEvent:Connect(function()
+            if not FakeGod then return end
+            if tick() - GodCD < 0.8 then return end
+            if tick() - last < 0.5 then return end
+            GodCD = tick()
+            pcall(function()
+                local c = lp.Character
+                local root = c and c:FindFirstChild("HumanoidRootPart")
+                if not root then return end
+                local near = false
+                for _, p in ipairs(Players:GetPlayers()) do
+                    if p ~= lp and alive(p) and p.Character then
+                        local ehr = p.Character:FindFirstChild("HumanoidRootPart")
+                        if ehr and (ehr.Position - root.Position).Magnitude < 80 then
+                            near = true
+                            break
+                        end
+                    end
+                end
+                if not near then return end
+                local saved = root.CFrame
+                for _, v in ipairs(c:GetDescendants()) do
+                    if v:IsA("BasePart") then v.CanCollide = false end
+                end
+                root.CFrame = saved - Vector3.new(0, 6, 0)
+                task.wait(0.3)
+                local c2 = lp.Character
+                local r2 = c2 and c2:FindFirstChild("HumanoidRootPart")
+                if r2 then r2.CFrame = saved end
+            end)
+        end)
+    end
+end)
+
 pcall(function()
     WindUI:AddTheme({
         Name = "Catsix Black",
@@ -619,17 +733,45 @@ local TpTarget = nil
 local FarmTarget = nil
 local FarmHome = nil
 
-local function farmTool(c)
+local function farmPick(c, wantKnife)
     for _, t in ipairs(c:GetChildren()) do
         if t:IsA("Tool") then
             local nm = string.lower(t.Name)
             if not string.find(nm, "fake") and not string.find(nm, "bomb") then
-                return t
+                local isKnife = string.find(nm, "knife") or t:FindFirstChild("KnifeStabbed", true) or t:FindFirstChild("KnifeThrown", true)
+                if (wantKnife and isKnife) or (not wantKnife and not isKnife) then
+                    return t
+                end
             end
         end
     end
+    return nil
+end
+
+local function farmTool(c)
+    local got = farmPick(c, true)
+    if got then return got end
+    got = farmPick(c, false)
+    if got then return got end
     local pack = lp:FindFirstChildOfClass("Backpack")
     if pack then
+        for _, t in ipairs(pack:GetChildren()) do
+            if t:IsA("Tool") then
+                local nm = string.lower(t.Name)
+                if not string.find(nm, "fake") and not string.find(nm, "bomb") then
+                    local hum = c:FindFirstChildOfClass("Humanoid")
+                    if hum then pcall(function() hum:EquipTool(t) end) end
+                    task.wait(0.15)
+                    local eq = c:FindFirstChild(t.Name)
+                    if eq then
+                        local enm = string.lower(eq.Name)
+                        if string.find(enm, "knife") or eq:FindFirstChild("KnifeStabbed", true) then
+                            return eq
+                        end
+                    end
+                end
+            end
+        end
         for _, t in ipairs(pack:GetChildren()) do
             if t:IsA("Tool") then
                 local nm = string.lower(t.Name)
@@ -773,6 +915,101 @@ task.spawn(function()
     end
 end)
 
+local GunFarmOn = false
+local GunTarget = nil
+local GunHome = nil
+
+local function gunFarmTool(c)
+    for _, t in ipairs(c:GetChildren()) do
+        if t:IsA("Tool") and t:FindFirstChild("Shoot", true) then
+            return t
+        end
+    end
+    local pack = lp:FindFirstChildOfClass("Backpack")
+    if pack then
+        for _, t in ipairs(pack:GetChildren()) do
+            if t:IsA("Tool") and t:FindFirstChild("Shoot", true) then
+                local hum = c:FindFirstChildOfClass("Humanoid")
+                if hum then pcall(function() hum:EquipTool(t) end) end
+                task.wait(0.15)
+                local eq = c:FindFirstChild(t.Name)
+                if eq then return eq end
+            end
+        end
+    end
+    return farmTool(c)
+end
+
+local function gunFarmStep()
+    local c = lp.Character
+    if not c then return end
+    local root = c:FindFirstChild("HumanoidRootPart")
+    if not root then return end
+    if GunTarget == nil or not alive(GunTarget) or GunTarget.Parent == nil then
+        GunTarget = farmNext()
+        if GunTarget == nil then
+            if GunHome then
+                pcall(function()
+                    if (root.Position - GunHome.Position).Magnitude > 6 then
+                        root.CFrame = GunHome
+                    end
+                end)
+            end
+            task.wait(0.5)
+            return
+        end
+        task.wait(0.15)
+    end
+    local tch = GunTarget.Character
+    if not tch then return end
+    local thr = tch:FindFirstChild("HumanoidRootPart")
+    if not thr then return end
+    local thead = tch:FindFirstChild("Head")
+    for _, v in ipairs(c:GetDescendants()) do
+        if v:IsA("BasePart") then
+            v.CanCollide = false
+        end
+    end
+    pcall(function()
+        root.CFrame = thr.CFrame * CFrame.new(0, 8, 0)
+    end)
+    local tool = gunFarmTool(c)
+    if not tool then return end
+    pcall(function() tool:Activate() end)
+    local r = remoteOf(tool)
+    if r then
+        local t = tt()
+        local aim = thr.Position
+        if thr.Velocity.Magnitude > 1 then
+            local v = thr.Velocity
+            if v.Magnitude > 60 then v = v.Unit * 60 end
+            aim = thr.Position + v * t
+        end
+        local origin = CFrame.new(root.Position)
+        pcall(function() r:FireServer(origin, CFrame.new(aim)) end)
+        pcall(function() r:FireServer(aim) end)
+        pcall(function() r:FireServer(tch, aim) end)
+        if thead then pcall(function() r:FireServer(thead) end) end
+        local reps = 8
+        if Settings.HitChance >= 100 then reps = 16 end
+        for i = 1, reps do
+            pcall(function() r:FireServer(origin, CFrame.new(aim)) end)
+        end
+    end
+end
+
+task.spawn(function()
+    while true do
+        if GunFarmOn then
+            pcall(gunFarmStep)
+            task.wait(0.15)
+        else
+            GunTarget = nil
+            task.wait(0.3)
+        end
+    end
+end)
+
 local function tpNames()
     local n = {}
     for _, p in ipairs(Players:GetPlayers()) do
@@ -831,6 +1068,36 @@ task.spawn(function()
     end
 end)
 
+local function runCmd(msg)
+    if not msg or msg == "" then return end
+    msg = msg:match("^%s*(.-)%s*$")
+    if msg == "" or msg:sub(1,1) ~= "/" then return end
+    local parts = msg:split(" ")
+    local cmd = parts[1]:lower()
+    local a1 = parts[2] or ""
+    if cmd == "/shoot" then task.spawn(function() pcall(shoot) end)
+    elseif cmd == "/knife" then task.spawn(function() pcall(throwKnife) end)
+    elseif cmd == "/farm" then FarmOn = not FarmOn
+    elseif cmd == "/gunkill" then GunFarmOn = not GunFarmOn
+    elseif cmd == "/esp" then Settings.ESPEnabled = not Settings.ESPEnabled
+    elseif cmd == "/fly" then Settings.Fly = not Settings.Fly
+    elseif cmd == "/speed" then
+        local v = tonumber(a1)
+        if v then Settings.WalkSpeed = v Settings.SpeedEnabled = true end
+    elseif cmd == "/hitchance" then
+        local v = tonumber(a1)
+        if v then Settings.HitChance = math.clamp(math.floor(v), 1, 100) end
+    elseif cmd == "/tp" then
+        if a1 ~= "" then pcall(function() tpTo(a1) end) end
+    elseif cmd == "/rejoin" then
+        pcall(function() TeleportService:TeleportToPlaceInstance(game.PlaceId, game.JobId, lp) end)
+    elseif cmd == "/serverhop" then
+        pcall(function() TeleportService:Teleport(game.PlaceId, lp) end)
+    end
+end
+
+lp.Chatted:Connect(function(msg) runCmd(msg) end)
+
 local UILoaded = false
 local Window = nil
 
@@ -841,7 +1108,7 @@ local function BuildUI()
     Window = WindUI:CreateWindow({
         Title = "Catsix",
         Icon = "cat",
-        Author = "5v5 Aim Trainer | v1.0",
+        Author = "5v5 Aim Trainer | v1.5",
         Folder = "Catsix",
         Size = UDim2.fromOffset(580, 460),
         MinSize = Vector2.new(560, 350),
@@ -853,6 +1120,13 @@ local function BuildUI()
         SideBarWidth = 200,
         HideSearchBar = false,
         ScrollBarEnabled = true,
+        OpenButton = {
+            Title = "Catsix",
+            Enabled = true,
+            Draggable = true,
+            OnlyMobile = false,
+            Scale = 0.55,
+        },
         Topbar = {
             Height = 44,
             ButtonsType = "Default",
@@ -872,7 +1146,7 @@ local function BuildUI()
         })
     end)
 
-    local HomeTab = Window:Tab({ Title = "Home", Icon = "home" })
+    local HomeTab = Window:Tab({ Title = "Home", Icon = "house" })
     local CombatTab = Window:Tab({ Title = "Combat", Icon = "crosshair" })
     local FarmTab = Window:Tab({ Title = "Farm", Icon = "swords" })
     local PlayerTab = Window:Tab({ Title = "Player", Icon = "user" })
@@ -902,13 +1176,13 @@ local function BuildUI()
         })
 
         HomeTab:Button({
-            Title = "Copy Game Link",
-            Desc = "Copy 5v5 Aim Trainer link",
+            Title = "Copy Discord",
+            Desc = "https://discord.gg/rHPqNx5ug4",
             Icon = "link",
             Callback = function()
                 if setclipboard then
-                    setclipboard("https://www.roblox.com/games/70862359496750/5v5-Aim-Trainer")
-                    WindUI:Notify({ Title = "Catsix", Content = "Game link copied!", Duration = 2, Icon = "check" })
+                    setclipboard("https://discord.gg/rHPqNx5ug4")
+                    WindUI:Notify({ Title = "Catsix", Content = "Discord copied!", Duration = 2, Icon = "check" })
                 end
             end,
         })
@@ -983,6 +1257,14 @@ local function BuildUI()
             Callback = function(v) Settings.HitboxSize = math.floor(v) end,
         })
 
+        ShootSec:Slider({
+            Title = "Hitbox Transparency",
+            Step = 0.05,
+            Value = { Min = 0, Max = 1, Default = 0.4 },
+            Flag = "HitboxTrans",
+            Callback = function(v) Settings.HitboxTrans = v end,
+        })
+
         local KnifeSec = CombatTab:Section({ Title = "Throw Knife", Opened = true })
 
         KnifeSec:Keybind({
@@ -1004,20 +1286,40 @@ local function BuildUI()
                 task.spawn(throwKnife)
             end,
         })
+
+        local GodSec = CombatTab:Section({ Title = "Fake Godmode", Opened = true })
+
+        GodSec:Toggle({
+            Title = "Fake Godmode",
+            Desc = "Duck under when enemies aim at you",
+            Icon = "shield",
+            Value = false,
+            Flag = "FakeGod",
+            Callback = function(v)
+                FakeGod = v
+                WindUI:Notify({
+                    Title = "Catsix",
+                    Content = v and "Fake Godmode ON" or "Fake Godmode OFF",
+                    Duration = 2,
+                    Icon = "shield",
+                })
+            end,
+        })
     end
 
     do
         local FarmSec = FarmTab:Section({ Title = "Kill All", Opened = true })
 
         FarmSec:Toggle({
-            Title = "Kill All Farm",
-            Desc = "Teleport under enemy, equip non bomb weapon, auto click",
+            Title = "Knife Kill All",
+            Desc = "Teleport under enemy with knife, click till dead",
             Icon = "swords",
             Value = false,
             Flag = "FarmOn",
             Callback = function(v)
                 FarmOn = v
                 if v then
+                    GunFarmOn = false
                     FarmTarget = nil
                     pcall(function()
                         local c = lp.Character
@@ -1038,9 +1340,46 @@ local function BuildUI()
                 end
                 WindUI:Notify({
                     Title = "Catsix Farm",
-                    Content = v and "Farm ON" or "Farm OFF",
+                    Content = v and "Knife Farm ON" or "Farm OFF",
                     Duration = 2,
                     Icon = "swords",
+                })
+            end,
+        })
+
+        FarmSec:Toggle({
+            Title = "Gun Kill All",
+            Desc = "Teleport above enemy, shoot till dead",
+            Icon = "crosshair",
+            Value = false,
+            Flag = "GunFarmOn",
+            Callback = function(v)
+                GunFarmOn = v
+                if v then
+                    FarmOn = false
+                    GunTarget = nil
+                    pcall(function()
+                        local c = lp.Character
+                        local root = c and c:FindFirstChild("HumanoidRootPart")
+                        if root then
+                            GunHome = root.CFrame
+                        end
+                    end)
+                else
+                    GunTarget = nil
+                    pcall(function()
+                        local c = lp.Character
+                        local root = c and c:FindFirstChild("HumanoidRootPart")
+                        if root and GunHome then
+                            root.CFrame = GunHome
+                        end
+                    end)
+                end
+                WindUI:Notify({
+                    Title = "Catsix Farm",
+                    Content = v and "Gun Farm ON" or "Farm OFF",
+                    Duration = 2,
+                    Icon = "crosshair",
                 })
             end,
         })
@@ -1049,12 +1388,18 @@ local function BuildUI()
             Title = "Stop Farm",
             Callback = function()
                 FarmOn = false
+                GunFarmOn = false
                 FarmTarget = nil
+                GunTarget = nil
                 pcall(function()
                     local c = lp.Character
                     local root = c and c:FindFirstChild("HumanoidRootPart")
-                    if root and FarmHome then
-                        root.CFrame = FarmHome
+                    if root then
+                        if FarmHome then
+                            root.CFrame = FarmHome
+                        elseif GunHome then
+                            root.CFrame = GunHome
+                        end
                     end
                 end)
             end,
@@ -1310,6 +1655,14 @@ local function BuildUI()
             Callback = function(v) Settings.AntiAFK = v end,
         })
 
+        PerSec:Toggle({
+            Title = "Invisible",
+            Desc = "Half transparent body",
+            Value = false,
+            Flag = "InvOn",
+            Callback = function(v) setInv(v) end,
+        })
+
         local ServSec = MiscTab:Section({ Title = "Server", Opened = true })
 
         ServSec:Button({
@@ -1361,6 +1714,33 @@ local function BuildUI()
                 Settings.ESPEnabled = false
                 FarmOn = false
                 if Window then pcall(function() Window:Destroy() end) end
+            end,
+        })
+
+        local CheatSec = MiscTab:Section({ Title = "Cheat Detector", Opened = true })
+
+        CheatSec:Toggle({
+            Title = "Auto Scan",
+            Desc = "Notify on speed fly god hitbox",
+            Value = false,
+            Flag = "CheatOn",
+            Callback = function(v) CheatOn = v end,
+        })
+
+        CheatSec:Button({
+            Title = "Scan Now",
+            Icon = "shield",
+            Callback = function()
+                local found = {}
+                pcall(function() found = cheatScan() end)
+                local msg = #found .. " flagged"
+                if #found > 0 then
+                    msg = table.concat(found, " | ")
+                    if setclipboard then
+                        pcall(function() setclipboard(table.concat(found, "\n")) end)
+                    end
+                end
+                WindUI:Notify({ Title = "Cheat Scan", Content = msg, Duration = 4, Icon = "shield" })
             end,
         })
 
@@ -1509,4 +1889,16 @@ local function BuildUI()
     })
 end
 
-BuildUI()
+WindUI:Popup({
+    Title = "Updated to V1.5",
+    Icon = "cat",
+    Content = "Catsix updated. Press Continue to load.",
+    Buttons = {
+        {
+            Title = "Continue",
+            Icon = "arrow-right",
+            Variant = "Primary",
+            Callback = function() BuildUI() end,
+        },
+    },
+})
