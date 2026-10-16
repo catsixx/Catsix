@@ -1,1 +1,1167 @@
-print("Hello")
+local WindUI = loadstring(game:HttpGet("https://github.com/Footagesus/WindUI/releases/latest/download/main.lua"))()
+
+local RS = game:GetService("RunService")
+local Players = game:GetService("Players")
+local UIS = game:GetService("UserInputService")
+local TS = game:GetService("TweenService")
+local VU = game:GetService("VirtualUser")
+local TPS = game:GetService("TeleportService")
+local SG = game:GetService("StarterGui")
+local HS = game:GetService("HttpService")
+local Lighting = game:GetService("Lighting")
+local Workspace = game:GetService("Workspace")
+
+local lp = Players.LocalPlayer
+local Window = nil
+
+local ws = 16
+local jp = 50
+local flyspd = 50
+
+local ncOn, ijOn, flyOn, invOn = false, false, false, false
+local asOn, agOn, acOn, ac2On = false, false, false, false
+local espM, espS, espI, espAll = false, false, false, false
+local glOn, glSpd = false, 50
+local alagOn, aafkOn, afOn = false, false, false
+
+local conns = {}
+local spdConn, ncConn, ijConn, flyConn, glConn
+local asConn, agConn, acConn, ac2Conn
+local aafkConn, espConn
+local fbv, fbg
+
+local espCache = {}
+local lastShot, lastGrab = 0, 0
+
+local FOLDER = "BaconHub"
+local SPF = FOLDER.."/speed.txt"
+local JPF = FOLDER.."/jump.txt"
+local CFG = FOLDER.."/config.json"
+
+local function saveFile(path, val)
+	pcall(function()
+		if not (isfolder and makefolder and writefile) then return end
+		if not isfolder(FOLDER) then makefolder(FOLDER) end
+		writefile(path, tostring(val))
+	end)
+end
+
+local function readFile(path, def)
+	local ok, v = pcall(function()
+		if isfile and readfile and isfile(path) then return tonumber(readfile(path)) end
+	end)
+	return (ok and v) or def
+end
+
+ws = readFile(SPF, 16)
+jp = readFile(JPF, 50)
+
+local function notif(title, msg, dur)
+end
+
+local function gc() return lp.Character end
+local function gh()
+	local c = gc()
+	return c and c:FindFirstChildOfClass("Humanoid")
+end
+local function gr()
+	local c = gc()
+	if not c then return end
+	return c:FindFirstChild("HumanoidRootPart") or c:FindFirstChild("Torso") or c:FindFirstChild("UpperTorso")
+end
+
+local function hasLOS(from, to, ignore)
+	local ok, hit = pcall(function()
+		local p = RaycastParams.new()
+		p.FilterType = Enum.RaycastFilterType.Exclude
+		p.FilterDescendantsInstances = ignore or {}
+		return workspace:Raycast(from, to - from, p)
+	end)
+	if not ok then return true end
+	return hit == nil
+end
+
+local function findMurder()
+	for _, p in ipairs(Players:GetPlayers()) do
+		if p == lp then continue end
+		if (p.Character and p.Character:FindFirstChild("Knife"))
+		or (p.Backpack and p.Backpack:FindFirstChild("Knife")) then
+			return p
+		end
+	end
+end
+
+local function mkHL(parent, color)
+	local h = Instance.new("Highlight")
+	h.FillColor = color
+	h.OutlineColor = Color3.new(1,1,1)
+	h.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+	h.FillTransparency = 0.3
+	h.Parent = parent
+	return h
+end
+
+local function applySpd()
+	local h = gh()
+	if not h then return end
+	if h.WalkSpeed ~= ws then h.WalkSpeed = ws end
+	if h.JumpPower ~= jp then h.JumpPower = jp end
+end
+
+local function startSpdLoop()
+	if spdConn then spdConn:Disconnect() end
+	applySpd()
+	local t = 0
+	spdConn = RS.Stepped:Connect(function(_, dt)
+		t += dt
+		if t < 0.2 then return end
+		t = 0
+		applySpd()
+	end)
+	table.insert(conns, spdConn)
+end
+
+local function clearPEsp()
+	for _, h in pairs(espCache) do pcall(function() h:Destroy() end) end
+	espCache = {}
+end
+
+local function rebuildEspP(player)
+	if player == lp or not player.Character then return end
+	local c = player.Character
+	local hk = c:FindFirstChild("Knife") or (player.Backpack and player.Backpack:FindFirstChild("Knife"))
+	local hg = c:FindFirstChild("Gun") or (player.Backpack and player.Backpack:FindFirstChild("Gun"))
+	local col
+	local allOn = espAll
+	if (espM or allOn) and hk then col = Color3.fromRGB(255,0,0)
+	elseif (espS or allOn) and hg then col = Color3.fromRGB(0,100,255)
+	elseif (espI or allOn) and not hk and not hg then col = Color3.fromRGB(0,255,0)
+	elseif allOn then col = Color3.fromRGB(200,200,200)
+	end
+	local ex = espCache[player]
+	if col then
+		if ex and ex.Parent == c then
+			ex.FillColor = col
+		else
+			if ex then pcall(function() ex:Destroy() end) end
+			espCache[player] = mkHL(c, col)
+		end
+	else
+		if ex then pcall(function() ex:Destroy() end) espCache[player] = nil end
+	end
+end
+
+local function updateESP()
+	if not (espAll or espM or espS or espI) then clearPEsp() return end
+	for p, h in pairs(espCache) do
+		if not p.Character or not h.Parent then
+			pcall(function() h:Destroy() end)
+			espCache[p] = nil
+		end
+	end
+	for _, p in ipairs(Players:GetPlayers()) do rebuildEspP(p) end
+end
+
+
+
+local function startEspLoop()
+	if espConn then espConn:Disconnect() end
+	local t = 0
+	espConn = RS.Stepped:Connect(function(_, dt)
+		t += dt
+		if t < 0.5 then return end
+		t = 0
+		pcall(updateESP)
+	end)
+	table.insert(conns, espConn)
+
+	local pac = Players.PlayerAdded:Connect(function(p)
+		p.CharacterAdded:Connect(function()
+			task.wait(0.5)
+			pcall(function() rebuildEspP(p) end)
+		end)
+	end)
+	table.insert(conns, pac)
+
+	for _, p in ipairs(Players:GetPlayers()) do
+		if p == lp then continue end
+		local rc = p.CharacterAdded:Connect(function()
+			task.wait(0.5)
+			pcall(function() rebuildEspP(p) end)
+		end)
+		table.insert(conns, rc)
+	end
+end
+
+local function applyNcToChar(c)
+	if not c then return end
+	pcall(function()
+		for _, p in ipairs(c:GetDescendants()) do
+			if p:IsA("BasePart") then p.CanCollide = false end
+		end
+	end)
+end
+
+local function toggleNoclip()
+	ncOn = not ncOn
+	if ncOn then
+		if ncConn then ncConn:Disconnect() end
+		applyNcToChar(gc())
+		ncConn = lp.CharacterAdded:Connect(function(nc)
+			applyNcToChar(nc)
+			nc.DescendantAdded:Connect(function(d)
+				if ncOn and d:IsA("BasePart") then d.CanCollide = false end
+			end)
+		end)
+		table.insert(conns, ncConn)
+	else
+		if ncConn then ncConn:Disconnect() ncConn = nil end
+	end
+end
+
+local function toggleInfJump()
+	ijOn = not ijOn
+	if ijOn then
+		if ijConn then ijConn:Disconnect() end
+		ijConn = UIS.JumpRequest:Connect(function()
+			local h = gh()
+			if h then pcall(function() h:ChangeState(Enum.HumanoidStateType.Jumping) end) end
+		end)
+		table.insert(conns, ijConn)
+	else
+		if ijConn then ijConn:Disconnect() ijConn = nil end
+	end
+end
+
+local function toggleFly()
+	flyOn = not flyOn
+	local c = gc()
+	local root = gr()
+	local h = gh()
+	if not c or not root or not h then flyOn = not flyOn return end
+	if flyOn then
+		h.PlatformStand = true
+		fbv = Instance.new("BodyVelocity")
+		fbv.Velocity = Vector3.zero
+		fbv.MaxForce = Vector3.new(1e5,1e5,1e5)
+		fbv.Parent = root
+		fbg = Instance.new("BodyGyro")
+		fbg.MaxTorque = Vector3.new(9e4,9e4,9e4)
+		fbg.P = 9e4
+		fbg.CFrame = root.CFrame
+		fbg.Parent = root
+		if flyConn then flyConn:Disconnect() end
+		flyConn = RS.Heartbeat:Connect(function()
+			if not flyOn then return end
+			local cam = workspace.CurrentCamera
+			if not cam then return end
+			local dir = Vector3.zero
+			if UIS:IsKeyDown(Enum.KeyCode.W) then dir += cam.CFrame.LookVector end
+			if UIS:IsKeyDown(Enum.KeyCode.S) then dir -= cam.CFrame.LookVector end
+			if UIS:IsKeyDown(Enum.KeyCode.A) then dir -= cam.CFrame.RightVector end
+			if UIS:IsKeyDown(Enum.KeyCode.D) then dir += cam.CFrame.RightVector end
+			if UIS:IsKeyDown(Enum.KeyCode.Space) then dir += Vector3.new(0,1,0) end
+			if UIS:IsKeyDown(Enum.KeyCode.LeftControl) then dir -= Vector3.new(0,1,0) end
+			if fbv and fbv.Parent then
+				fbv.Velocity = dir.Magnitude > 0 and dir.Unit*flyspd or Vector3.zero
+			end
+			if fbg and fbg.Parent then fbg.CFrame = cam.CFrame end
+		end)
+		table.insert(conns, flyConn)
+	else
+		h.PlatformStand = false
+		if flyConn then flyConn:Disconnect() flyConn = nil end
+		if fbv and fbv.Parent then fbv:Destroy() end
+		if fbg and fbg.Parent then fbg:Destroy() end
+		fbv, fbg = nil, nil
+	end
+end
+
+local function toggleGlitch()
+	glOn = not glOn
+	if glOn then
+		if glConn then glConn:Disconnect() end
+		glConn = RS.Stepped:Connect(function()
+			if not glOn then return end
+			local c = gc()
+			local h = c and c:FindFirstChildOfClass("Humanoid")
+			local r = c and c:FindFirstChild("HumanoidRootPart")
+			if not h or not r then return end
+			local st = h:GetState()
+			if st == Enum.HumanoidStateType.Jumping or st == Enum.HumanoidStateType.Freefall then
+				local md = h.MoveDirection
+				if md.Magnitude > 0.1 then
+					r.AssemblyLinearVelocity = Vector3.new(md.X * glSpd, r.AssemblyLinearVelocity.Y, md.Z * glSpd)
+				end
+			end
+		end)
+		table.insert(conns, glConn)
+	else
+		if glConn then glConn:Disconnect() glConn = nil end
+	end
+end
+
+local function toggleInvis()
+	invOn = not invOn
+	local c = gc()
+	if not c then return end
+	local hrp = c:FindFirstChild("HumanoidRootPart")
+	if not hrp then return end
+	pcall(function()
+		if invOn then
+			for _, p in ipairs(c:GetDescendants()) do
+				if p:IsA("BasePart") and p.Name ~= "HumanoidRootPart" then
+					p.Transparency = 0.5
+				end
+			end
+			local saved = hrp.CFrame
+			c:MoveTo(Vector3.new(-25.95, 84, 3537.55))
+			task.wait(0.15)
+			local seat = Instance.new("Seat")
+			seat.Anchored = false
+			seat.CanCollide = false
+			seat.Name = "InvisSeat"
+			seat.Transparency = 1
+			seat.Position = Vector3.new(-25.95, 84, 3537.55)
+			seat.Parent = workspace
+			local torso = c:FindFirstChild("Torso") or c:FindFirstChild("UpperTorso")
+			if torso then
+				local w = Instance.new("Weld")
+				w.Part0 = seat
+				w.Part1 = torso
+				w.Parent = seat
+			end
+			seat.CFrame = saved
+		else
+			for _, p in ipairs(c:GetDescendants()) do
+				if p:IsA("BasePart") and p.Name ~= "HumanoidRootPart" then
+					p.Transparency = 0
+				end
+			end
+			local s = workspace:FindFirstChild("InvisSeat")
+			if s then s:Destroy() end
+		end
+	end)
+end
+
+local function equipGun()
+	local c = gc()
+	if not c then return nil end
+	local gun = c:FindFirstChild("Gun")
+	if gun then return gun end
+	if lp.Backpack then
+		local bp = lp.Backpack:FindFirstChild("Gun")
+		if bp then
+			local h = gh()
+			if h then h:EquipTool(bp) task.wait(0.1) end
+			return c:FindFirstChild("Gun")
+		end
+	end
+end
+
+local function fireVolley(gun, hand, tgt)
+	local hr = tgt:FindFirstChild("HumanoidRootPart")
+	if not hr then return false end
+	local head = tgt:FindFirstChild("Head")
+	local upper = tgt:FindFirstChild("UpperTorso") or tgt:FindFirstChild("Torso")
+	local parts = {hr}
+	if upper then table.insert(parts, 2, upper) end
+	if head then table.insert(parts, head) end
+	local origin = CFrame.new(hand.Position)
+	local best = hr.Position
+	local t = 0.12
+	for _, part in ipairs(parts) do
+		if part and part.Parent then
+			local v = part.Velocity
+			local a = part.Position
+			if v.Magnitude > 1 then
+				if v.Magnitude > 60 then v = v.Unit * 60 end
+				a = part.Position + v * t
+			end
+			best = a
+			pcall(function() gun.Shoot:FireServer(origin, CFrame.new(a)) end)
+			pcall(function() gun.Shoot:FireServer(a) end)
+			pcall(function() gun.Shoot:FireServer(tgt, a) end)
+			pcall(function() gun.Shoot:FireServer(tgt) end)
+			if head then pcall(function() gun.Shoot:FireServer(head) end) end
+		end
+	end
+	for i = 1, 14 do pcall(function() gun.Shoot:FireServer(origin, CFrame.new(best)) end) end
+	return true
+end
+
+local function shootMurder()
+	pcall(function()
+		local c = gc()
+		if not c then return end
+		local m = findMurder()
+		if not m or not m.Character then notif("Shoot", "no murderer", 2) return end
+		local tgt = m.Character:FindFirstChild("HumanoidRootPart") or m.Character:FindFirstChild("Head")
+		if not tgt then return end
+		local root = gr()
+		if not root then return end
+		local gun = equipGun()
+		if not gun then notif("Shoot", "no gun", 2) return end
+		local hand = c:FindFirstChild("RightHand") or c:FindFirstChild("Right Arm")
+		if gun:FindFirstChild("Shoot") and hand then
+			fireVolley(gun, hand, m.Character)
+			notif("Shoot", "fired", 2)
+		end
+	end)
+end
+
+local function toggleAutoShoot()
+	asOn = not asOn
+	if asOn then
+		if asConn then asConn:Disconnect() end
+		asConn = RS.Heartbeat:Connect(function()
+			if not asOn then return end
+			local now = tick()
+			if now - lastShot < 1 then return end
+			pcall(function()
+				local c = gc()
+				if not c then return end
+				local hasGun = c:FindFirstChild("Gun") or (lp.Backpack and lp.Backpack:FindFirstChild("Gun"))
+				if not hasGun then return end
+				local m = findMurder()
+				if not m or not m.Character then return end
+				local tgt = m.Character:FindFirstChild("HumanoidRootPart") or m.Character:FindFirstChild("Head")
+				if not tgt then return end
+				local root = gr()
+				if not root then return end
+				if not hasLOS(root.Position, tgt.Position, {c, m.Character}) then return end
+				local gun = equipGun()
+				if not gun then return end
+				local hand = c:FindFirstChild("RightHand") or c:FindFirstChild("Right Arm")
+				if gun:FindFirstChild("Shoot") and hand then
+					lastShot = tick()
+					fireVolley(gun, hand, m.Character)
+				end
+			end)
+		end)
+		table.insert(conns, asConn)
+	else
+		if asConn then asConn:Disconnect() asConn = nil end
+	end
+end
+
+local function grabGun()
+	pcall(function()
+		local gun = workspace:FindFirstChild("GunDrop", true)
+		if not gun then notif("Grab", "no gun drop", 2) return end
+		local root = gr()
+		if not root then return end
+		if firetouchinterest then
+			firetouchinterest(root, gun, 0)
+			firetouchinterest(root, gun, 1)
+		else
+			gun.CFrame = root.CFrame
+		end
+		notif("Grab", "got gun", 2)
+	end)
+end
+
+
+local function toggleAutoCollect()
+	acOn = not acOn
+	if acOn then
+		if acConn then acConn:Disconnect() end
+		local t = 0
+		acConn = RS.Heartbeat:Connect(function(dt)
+			t += dt
+			if t < 0.3 then return end
+			t = 0
+			pcall(function()
+				local root = gr()
+				if not root then return end
+				for _, obj in ipairs(workspace:GetChildren()) do
+					local cont = obj:FindFirstChild("CoinContainer")
+					if not cont then continue end
+					local closest, shortest = nil, math.huge
+					for _, coin in ipairs(cont:GetChildren()) do
+						local d = (root.Position - coin:GetPivot().Position).Magnitude
+						if d < shortest then shortest = d closest = coin end
+					end
+					if closest and shortest < 30 then
+						local tw = TS:Create(root, TweenInfo.new(0.25), {CFrame = closest:GetPivot()})
+						tw:Play()
+						tw.Completed:Wait()
+					end
+				end
+			end)
+		end)
+		table.insert(conns, acConn)
+	else
+		if acConn then acConn:Disconnect() acConn = nil end
+	end
+end
+
+local function toggleAutoCoins()
+	ac2On = not ac2On
+	if ac2On then
+		if ac2Conn then ac2Conn:Disconnect() end
+		local t = 0
+		ac2Conn = RS.Heartbeat:Connect(function(dt)
+			t += dt
+			if t < 1 then return end
+			t = 0
+			pcall(function()
+				local root = gr()
+				if not root then return end
+				for _, obj in ipairs(workspace:GetChildren()) do
+					local cont = obj:FindFirstChild("CoinContainer")
+					if not cont then continue end
+					for _, coin in ipairs(cont:GetChildren()) do
+						pcall(function()
+							if coin:IsA("Model") then
+								coin:PivotTo(root.CFrame)
+							elseif coin:IsA("BasePart") then
+								coin.CFrame = root.CFrame
+							end
+						end)
+					end
+				end
+			end)
+		end)
+		table.insert(conns, ac2Conn)
+	else
+		if ac2Conn then ac2Conn:Disconnect() ac2Conn = nil end
+	end
+end
+
+local function toggleAutoGrab()
+	agOn = not agOn
+	if agOn then
+		if agConn then agConn:Disconnect() end
+		agConn = RS.Heartbeat:Connect(function()
+			if not agOn then return end
+			local now = tick()
+			if now - lastGrab < 2 then return end
+			lastGrab = now
+			pcall(function()
+				local gun = workspace:FindFirstChild("GunDrop", true)
+				if not gun then return end
+				local root = gr()
+				if not root then return end
+				if firetouchinterest then
+					firetouchinterest(root, gun, 0)
+					firetouchinterest(root, gun, 1)
+				else
+					gun.CFrame = root.CFrame
+				end
+			end)
+		end)
+		table.insert(conns, agConn)
+	else
+		if agConn then agConn:Disconnect() agConn = nil end
+	end
+end
+
+local function tpToMurder()
+	pcall(function()
+		local m = findMurder()
+		if not m or not m.Character then notif("TP", "no murderer", 2) return end
+		local tr = m.Character:FindFirstChild("HumanoidRootPart")
+		local root = gr()
+		if root and tr then root.CFrame = tr.CFrame notif("TP", "-> murderer", 2) end
+	end)
+end
+
+local function tpToPlayer(name)
+	pcall(function()
+		for _, p in ipairs(Players:GetPlayers()) do
+			if p.Name:lower() == name:lower() or p.DisplayName:lower() == name:lower() then
+				local tr = p.Character and p.Character:FindFirstChild("HumanoidRootPart")
+				local root = gr()
+				if root and tr then root.CFrame = tr.CFrame notif("TP", "-> "..p.Name, 2) end
+				return
+			end
+		end
+		notif("TP", "player not found", 2)
+	end)
+end
+
+local function tpToGun()
+	pcall(function()
+		local gun = workspace:FindFirstChild("GunDrop", true)
+		if not gun then notif("TP", "no gun drop", 2) return end
+		local root = gr()
+		if root then root.CFrame = gun.CFrame notif("TP", "-> gun", 2) end
+	end)
+end
+
+local function tpToLobby()
+	pcall(function()
+		local lobby = workspace:FindFirstChild("Lobby", true)
+		if not lobby then notif("TP", "no lobby", 2) return end
+		local part = lobby:FindFirstChildWhichIsA("BasePart", true)
+		if not part then return end
+		local root = gr()
+		if root then root.CFrame = part.CFrame * CFrame.new(0,3,0) notif("TP", "-> lobby", 2) end
+	end)
+end
+
+local function tpToMap()
+	pcall(function()
+		local map = workspace:FindFirstChild("CoinContainer", true)
+		if not map then notif("TP", "no map", 2) return end
+		local part = map:FindFirstChildWhichIsA("BasePart", true)
+		if not part then return end
+		local root = gr()
+		if root then root.CFrame = part.CFrame * CFrame.new(0,3,0) notif("TP", "-> map", 2) end
+	end)
+end
+
+
+local function toggleAntiAFK()
+	aafkOn = not aafkOn
+	if aafkOn then
+		if aafkConn then aafkConn:Disconnect() end
+		aafkConn = lp.Idled:Connect(function()
+			VU:CaptureController()
+			VU:ClickButton2(Vector2.new())
+		end)
+		table.insert(conns, aafkConn)
+	else
+		if aafkConn then aafkConn:Disconnect() aafkConn = nil end
+	end
+end
+
+local function toggleAntiLag()
+	alagOn = not alagOn
+	if alagOn then
+		pcall(function()
+			for _, v in ipairs(workspace:GetDescendants()) do
+				pcall(function()
+					if v:IsA("Texture") or v:IsA("Decal") then v:Destroy()
+					elseif v:IsA("SpecialMesh") then v.TextureId = ""
+					elseif v:IsA("BasePart") then v.Material = Enum.Material.SmoothPlastic
+					end
+				end)
+			end
+		end)
+		local lc = workspace.DescendantAdded:Connect(function(v)
+			if not alagOn then return end
+			pcall(function()
+				if v:IsA("Texture") or v:IsA("Decal") then v:Destroy()
+				elseif v:IsA("SpecialMesh") then v.TextureId = ""
+				elseif v:IsA("BasePart") then v.Material = Enum.Material.SmoothPlastic
+				end
+			end)
+		end)
+		table.insert(conns, lc)
+	else
+	end
+end
+
+
+local function toggleAntiFling()
+	afOn = not afOn
+	if afOn then
+		if afConn then afConn:Disconnect() end
+		afConn = RS.Heartbeat:Connect(function()
+			if not afOn then return end
+			pcall(function()
+				for _, p in ipairs(Players:GetPlayers()) do
+					if p == lp or not p.Character then continue end
+					for _, v in ipairs(p.Character:GetDescendants()) do
+						if v:IsA("BasePart") then v.CanCollide = false end
+					end
+				end
+			end)
+		end)
+		table.insert(conns, afConn)
+	else
+		if afConn then afConn:Disconnect() afConn = nil end
+	end
+end
+
+local FlingTarget = nil
+
+local function flingNames()
+	local n = {}
+	for _, p in ipairs(Players:GetPlayers()) do
+		if p ~= lp then table.insert(n, p.Name) end
+	end
+	if #n == 0 then table.insert(n, "none") end
+	return n
+end
+
+local function flingPlayer(name)
+	pcall(function()
+		local target
+		for _, p in ipairs(Players:GetPlayers()) do
+			if p.Name:lower() == name:lower() then target = p break end
+		end
+		if not target or not target.Character then notif("Fling", "not found", 2) return end
+		doFling(target)
+	end)
+end
+
+local function doRejoin()
+	pcall(function() TPS:Teleport(game.PlaceId, lp) end)
+end
+
+local function findSheriff()
+	for _, p in ipairs(Players:GetPlayers()) do
+		if p == lp then continue end
+		if (p.Character and p.Character:FindFirstChild("Gun"))
+		or (p.Backpack and p.Backpack:FindFirstChild("Gun")) then
+			return p
+		end
+	end
+end
+
+local FlingOldPos = nil
+local FlingFPDH = workspace.FallenPartsDestroyHeight
+local FlingLoopOn = false
+
+local function SkidFling(TargetPlayer)
+	local Character = gc()
+	local Humanoid = Character and Character:FindFirstChildOfClass("Humanoid")
+	local RootPart = Humanoid and Humanoid.RootPart
+	local TCharacter = TargetPlayer.Character
+	if not TCharacter then return end
+	local THumanoid = TCharacter:FindFirstChildOfClass("Humanoid")
+	local TRootPart = THumanoid and THumanoid.RootPart
+	local THead = TCharacter:FindFirstChild("Head")
+	local Accessory = TCharacter:FindFirstChildOfClass("Accessory")
+	local Handle = Accessory and Accessory:FindFirstChild("Handle")
+	if not (Character and Humanoid and RootPart) then return end
+	if RootPart.Velocity.Magnitude < 50 then
+		FlingOldPos = RootPart.CFrame
+	end
+	if THumanoid and THumanoid.Sit then return end
+	if THead then
+		workspace.CurrentCamera.CameraSubject = THead
+	elseif Handle then
+		workspace.CurrentCamera.CameraSubject = Handle
+	elseif THumanoid and TRootPart then
+		workspace.CurrentCamera.CameraSubject = THumanoid
+	end
+	if not TCharacter:FindFirstChildWhichIsA("BasePart") then return end
+	local function FPos(BasePart, Pos, Ang)
+		RootPart.CFrame = CFrame.new(BasePart.Position) * Pos * Ang
+		pcall(function() Character:SetPrimaryPartCFrame(CFrame.new(BasePart.Position) * Pos * Ang) end)
+		RootPart.Velocity = Vector3.new(9e7, 9e7 * 10, 9e7)
+		RootPart.RotVelocity = Vector3.new(9e8, 9e8, 9e8)
+	end
+	local function SFBasePart(BasePart)
+		local TimeToWait = 2
+		local Time = tick()
+		local Angle = 0
+		repeat
+			if RootPart and THumanoid then
+				if BasePart.Velocity.Magnitude < 50 then
+					Angle = Angle + 100
+					FPos(BasePart, CFrame.new(0, 1.5, 0) + THumanoid.MoveDirection * BasePart.Velocity.Magnitude / 1.25, CFrame.Angles(math.rad(Angle),0 ,0))
+					task.wait()
+					FPos(BasePart, CFrame.new(0, -1.5, 0) + THumanoid.MoveDirection * BasePart.Velocity.Magnitude / 1.25, CFrame.Angles(math.rad(Angle), 0, 0))
+					task.wait()
+					FPos(BasePart, CFrame.new(0, 1.5, 0) + THumanoid.MoveDirection * BasePart.Velocity.Magnitude / 1.25, CFrame.Angles(math.rad(Angle),0 ,0))
+					task.wait()
+					FPos(BasePart, CFrame.new(0, -1.5, 0) + THumanoid.MoveDirection * BasePart.Velocity.Magnitude / 1.25, CFrame.Angles(math.rad(Angle), 0, 0))
+					task.wait()
+					FPos(BasePart, CFrame.new(0, 1.5, 0) + THumanoid.MoveDirection, CFrame.Angles(math.rad(Angle),0 ,0))
+					task.wait()
+					FPos(BasePart, CFrame.new(0, -1.5, 0) + THumanoid.MoveDirection, CFrame.Angles(math.rad(Angle), 0, 0))
+					task.wait()
+				else
+					FPos(BasePart, CFrame.new(0, 1.5, THumanoid.WalkSpeed), CFrame.Angles(math.rad(90), 0, 0))
+					task.wait()
+					FPos(BasePart, CFrame.new(0, -1.5, -THumanoid.WalkSpeed), CFrame.Angles(0, 0, 0))
+					task.wait()
+					FPos(BasePart, CFrame.new(0, 1.5, THumanoid.WalkSpeed), CFrame.Angles(math.rad(90), 0, 0))
+					task.wait()
+					FPos(BasePart, CFrame.new(0, -1.5, 0), CFrame.Angles(math.rad(90), 0, 0))
+					task.wait()
+					FPos(BasePart, CFrame.new(0, -1.5, 0), CFrame.Angles(0, 0, 0))
+					task.wait()
+					FPos(BasePart, CFrame.new(0, -1.5, 0), CFrame.Angles(math.rad(90), 0, 0))
+					task.wait()
+					FPos(BasePart, CFrame.new(0, -1.5, 0), CFrame.Angles(0, 0, 0))
+					task.wait()
+				end
+			end
+		until Time + TimeToWait < tick()
+	end
+	workspace.FallenPartsDestroyHeight = 0/0
+	local BV = Instance.new("BodyVelocity")
+	BV.Velocity = Vector3.new(0, 0, 0)
+	BV.MaxForce = Vector3.new(9e9, 9e9, 9e9)
+	BV.Parent = RootPart
+	Humanoid:SetStateEnabled(Enum.HumanoidStateType.Seated, false)
+	if TRootPart then
+		SFBasePart(TRootPart)
+	elseif THead then
+		SFBasePart(THead)
+	elseif Handle then
+		SFBasePart(Handle)
+	else
+		return
+	end
+	BV:Destroy()
+	Humanoid:SetStateEnabled(Enum.HumanoidStateType.Seated, true)
+	workspace.CurrentCamera.CameraSubject = Humanoid
+	if FlingOldPos then
+		repeat
+			RootPart.CFrame = FlingOldPos * CFrame.new(0, .5, 0)
+			pcall(function() Character:SetPrimaryPartCFrame(FlingOldPos * CFrame.new(0, .5, 0)) end)
+			Humanoid:ChangeState("GettingUp")
+			for _, part in pairs(Character:GetChildren()) do
+				if part:IsA("BasePart") then
+					part.Velocity, part.RotVelocity = Vector3.new(), Vector3.new()
+				end
+			end
+			task.wait()
+		until (RootPart.Position - FlingOldPos.p).Magnitude < 25
+		workspace.FallenPartsDestroyHeight = FlingFPDH
+	end
+end
+
+task.spawn(function()
+	while true do
+		if FlingLoopOn and FlingTarget and FlingTarget ~= "none" then
+			local t = Players:FindFirstChild(FlingTarget)
+			if t then pcall(function() SkidFling(t) end) end
+			task.wait(0.5)
+		else
+			task.wait(0.5)
+		end
+	end
+end)
+
+local function doFling(target)
+	if not target or not target.Character then notif("Fling", "not found", 2) return end
+	task.spawn(function() pcall(function() SkidFling(target) end) end)
+	notif("Fling", "flinging "..target.Name, 2)
+end
+
+local function flingMurder()
+	pcall(function()
+		local m = findMurder()
+		if not m then notif("Fling", "no murderer", 2) return end
+		doFling(m)
+	end)
+end
+
+local function flingSheriff()
+	pcall(function()
+		local s = findSheriff()
+		if not s then notif("Fling", "no sheriff", 2) return end
+		doFling(s)
+	end)
+end
+
+local function doServerhop()
+	task.spawn(function()
+		local hopped = false
+		pcall(function()
+			local res = game:HttpGet("https://games.roblox.com/v1/games/"..game.PlaceId.."/servers/Public?limit=100")
+			local servers = HS:JSONDecode(res).data
+			if servers then
+				for _, s in ipairs(servers) do
+					if s.id ~= game.JobId and s.playing < s.maxPlayers then
+						TPS:TeleportToPlaceInstance(game.PlaceId, s.id, lp)
+						hopped = true
+						break
+					end
+				end
+			end
+		end)
+		if not hopped then
+			pcall(function() TPS:Teleport(game.PlaceId, lp) end)
+		end
+	end)
+	notif("Serverhop", "hopping...", 2)
+end
+
+local function saveConfig()
+	pcall(function()
+		if not (isfolder and makefolder and writefile) then notif("Config", "no fs", 2) return end
+		if not isfolder(FOLDER) then makefolder(FOLDER) end
+		writefile(CFG, HS:JSONEncode({
+			ws = ws, jp = jp, flyspd = flyspd, glSpd = glSpd,
+			ncOn = ncOn, ijOn = ijOn, invOn = invOn, glOn = glOn,
+			asOn = asOn, agOn = agOn, acOn = acOn, ac2On = ac2On,
+			espM = espM, espS = espS, espI = espI, espAll = espAll,
+			alagOn = alagOn, aafkOn = aafkOn, afOn = afOn,
+		}))
+		notif("Config", "saved", 2)
+	end)
+end
+
+local function loadConfig()
+	pcall(function()
+		if not (isfile and readfile) then notif("Config", "no fs", 2) return end
+		if not isfile(CFG) then notif("Config", "no config found", 2) return end
+		local cfg = HS:JSONDecode(readfile(CFG))
+		if cfg.ws then ws = cfg.ws saveFile(SPF,ws) applySpd() end
+		if cfg.jp then jp = cfg.jp saveFile(JPF,jp) applySpd() end
+		if cfg.flyspd then flyspd = cfg.flyspd end
+		if cfg.glSpd then glSpd = cfg.glSpd end
+		if cfg.ncOn ~= nil and cfg.ncOn ~= ncOn then toggleNoclip() end
+		if cfg.ijOn ~= nil and cfg.ijOn ~= ijOn then toggleInfJump() end
+		if cfg.invOn ~= nil and cfg.invOn ~= invOn then toggleInvis() end
+		if cfg.glOn ~= nil and cfg.glOn ~= glOn then toggleGlitch() end
+		if cfg.asOn ~= nil and cfg.asOn ~= asOn then toggleAutoShoot() end
+		if cfg.agOn ~= nil and cfg.agOn ~= agOn then toggleAutoGrab() end
+		if cfg.acOn ~= nil and cfg.acOn ~= acOn then toggleAutoCollect() end
+		if cfg.ac2On ~= nil and cfg.ac2On ~= ac2On then toggleAutoCoins() end
+		if cfg.espM ~= nil then espM = cfg.espM updateESP() end
+		if cfg.espS ~= nil then espS = cfg.espS updateESP() end
+		if cfg.espI ~= nil then espI = cfg.espI updateESP() end
+		if cfg.espAll ~= nil then espAll = cfg.espAll updateESP() end
+		if cfg.alagOn ~= nil and cfg.alagOn ~= alagOn then toggleAntiLag() end
+		if cfg.aafkOn ~= nil and cfg.aafkOn ~= aafkOn then toggleAntiAFK() end
+		if cfg.afOn ~= nil and cfg.afOn ~= afOn then toggleAntiFling() end
+		notif("Config", "loaded", 2)
+	end)
+end
+
+local function runCmd(msg)
+	if not msg or msg == "" then return end
+	msg = msg:match("^%s*(.-)%s*$")
+	if msg == "" or msg:sub(1,1) ~= "/" then return end
+	local parts = msg:split(" ")
+	local cmd = parts[1]:lower()
+	local a1r = parts[2] or ""
+	local a1 = a1r:lower()
+	if cmd == "/fly" then toggleFly()
+	elseif cmd == "/noclip" then toggleNoclip()
+	elseif cmd == "/infjump" then toggleInfJump()
+	elseif cmd == "/invis" then toggleInvis()
+	elseif cmd == "/speedglitch" then toggleGlitch()
+	elseif cmd == "/shoot" then shootMurder()
+	elseif cmd == "/autoshoot" then toggleAutoShoot()
+	elseif cmd == "/grab" then grabGun()
+	elseif cmd == "/autograb" then toggleAutoGrab()
+	elseif cmd == "/autocollect" then toggleAutoCollect()
+	elseif cmd == "/autocoins" then toggleAutoCoins()
+	elseif cmd == "/antifling" then toggleAntiFling()
+	elseif cmd == "/antiafk" then toggleAntiAFK()
+	elseif cmd == "/antilag" then toggleAntiLag()
+	elseif cmd == "/rejoin" then doRejoin()
+	elseif cmd == "/serverhop" then doServerhop()
+	elseif cmd == "/saveconfig" then saveConfig()
+	elseif cmd == "/loadconfig" then loadConfig()
+	elseif cmd == "/espmurder" then espM = not espM updateESP() notif("ESP Murder", espM and "on" or "off", 2)
+	elseif cmd == "/espsheriff" then espS = not espS updateESP() notif("ESP Sheriff", espS and "on" or "off", 2)
+	elseif cmd == "/espinnocent" then espI = not espI updateESP() notif("ESP Innocnt", espI and "on" or "off", 2)
+	elseif cmd == "/espall" then espAll = not espAll updateESP() notif("ESP All", espAll and "on" or "off", 2)
+	elseif cmd == "/speed" then
+		local v = tonumber(a1r)
+		if v then ws = math.clamp(v,1,999) saveFile(SPF,ws) applySpd() notif("Speed","-> "..ws,2)
+		else notif("Speed","usage: /speed <n>",2) end
+	elseif cmd == "/jump" then
+		local v = tonumber(a1r)
+		if v then jp = math.clamp(v,1,999) saveFile(JPF,jp) applySpd() notif("Jump","-> "..jp,2)
+		else notif("Jump","usage: /jump <n>",2) end
+	elseif cmd == "/flyspeed" then
+		local v = tonumber(a1r)
+		if v then flyspd = math.clamp(v,1,300) notif("FlySpeed","-> "..flyspd,2)
+		else notif("FlySpeed","usage: /flyspeed <n>",2) end
+	elseif cmd == "/tp" then
+		if a1 == "murder" then tpToMurder()
+		elseif a1 == "gun" then tpToGun()
+		elseif a1 == "lobby" then tpToLobby()
+		elseif a1 == "map" then tpToMap()
+		elseif a1r ~= "" then tpToPlayer(a1r)
+		else notif("TP","usage: /tp <murder|gun|lobby|map|name>",3) end
+	elseif cmd == "/fling" then
+		if a1r ~= "" then flingPlayer(a1r)
+		else notif("Fling","usage: /fling <name>",2) end
+	else notif("Catsix", "unknown: "..cmd, 2) end
+end
+
+pcall(function()
+	WindUI:AddTheme({
+		Name = "Catsix Black",
+		Accent = Color3.fromHex("#000000"),
+		Background = Color3.fromHex("#0a0a0a"),
+		Outline = Color3.fromHex("#1c1c1c"),
+		Text = Color3.fromHex("#ffffff"),
+		Placeholder = Color3.fromHex("#7a7a7a"),
+		Button = Color3.fromHex("#171717"),
+		Icon = Color3.fromHex("#ffffff"),
+	})
+end)
+pcall(function() WindUI:SetTheme("Catsix Black") end)
+
+local UILoaded = false
+
+local function BuildUI()
+	if UILoaded then return end
+	UILoaded = true
+	Window = WindUI:CreateWindow({
+		Title = "Catsix",
+		Icon = "cat",
+		Author = "MMV",
+		Folder = "CatsixMM2",
+		Size = UDim2.fromOffset(580, 460),
+		ToggleKey = Enum.KeyCode.K,
+		Transparent = true,
+		Theme = "Catsix Black",
+		Resizable = true,
+		SideBarWidth = 200,
+		OpenButton = {
+			Title = "Catsix",
+			Enabled = true,
+			Draggable = true,
+			OnlyMobile = false,
+			Scale = 0.55,
+		},
+		Topbar = { Height = 44, ButtonsType = "Default" },
+	})
+	pcall(function()
+		Window:Tag({ Title = "Catsix", Icon = "cat", Color = Color3.fromHex("#000000") })
+	end)
+
+	local HomeTab = Window:Tab({ Title = "Home", Icon = "house" })
+	local CombatTab = Window:Tab({ Title = "Combat", Icon = "crosshair" })
+	local FarmTab = Window:Tab({ Title = "Farm", Icon = "coins" })
+	local PlayerTab = Window:Tab({ Title = "Player", Icon = "user" })
+	local VisualTab = Window:Tab({ Title = "Visual", Icon = "eye" })
+	local MiscTab = Window:Tab({ Title = "Misc", Icon = "package" })
+	local SettingsTab = Window:Tab({ Title = "Settings", Icon = "settings" })
+
+	HomeTab:Paragraph({ Title = "Catsix", Desc = "MMV hub. K toggles UI. E shoots murderer, G grabs gun." })
+	HomeTab:Button({ Title = "Copy Discord", Icon = "link", Callback = function()
+		if setclipboard then setclipboard("https://discord.gg/rHPqNx5ug4") end
+		notif("Discord", "copied", 2)
+	end })
+
+	local ShootSec = CombatTab:Section({ Title = "Gun", Opened = true })
+	ShootSec:Button({ Title = "Shoot Murderer (E)", Desc = "Full volley at murderer", Icon = "zap", Callback = function() task.spawn(shootMurder) end })
+	ShootSec:Toggle({ Title = "AutoShoot", Desc = "Fires every second", Icon = "zap", Value = false, Flag = "asOn", Callback = function(v) if v ~= asOn then toggleAutoShoot() end end })
+	ShootSec:Button({ Title = "Grab Gun (G)", Desc = "Touch the dropped gun", Icon = "hand", Callback = function() grabGun() end })
+	ShootSec:Toggle({ Title = "AutoGrab Gun", Desc = "Auto pickup gun drops", Icon = "hand", Value = false, Flag = "agOn", Callback = function(v) if v ~= agOn then toggleAutoGrab() end end })
+	local FlingSec = CombatTab:Section({ Title = "Fling Player", Opened = true })
+	local FlingDrop = FlingSec:Dropdown({
+		Title = "Select Player",
+		Values = flingNames(),
+		Value = flingNames()[1],
+		Callback = function(v) FlingTarget = v end,
+	})
+	FlingSec:Button({ Title = "Refresh List", Desc = "Reload player names", Icon = "refresh-cw", Callback = function() pcall(function() FlingDrop:Refresh(flingNames()) end) end })
+	FlingSec:Button({ Title = "Fling", Desc = "Spin fling selected player", Icon = "wind", Callback = function() flingPlayer(FlingTarget or "") end })
+	FlingSec:Button({ Title = "Fling Murderer", Desc = "Spin fling the knife holder", Icon = "wind", Callback = function() flingMurder() end })
+	FlingSec:Button({ Title = "Fling Sheriff", Desc = "Spin fling the gun holder", Icon = "wind", Callback = function() flingSheriff() end })
+	FlingSec:Toggle({ Title = "Fling Loop", Desc = "Keeps flinging selected player", Value = false, Flag = "FlingLoopOn", Callback = function(v) FlingLoopOn = v end })
+	local ProtSec = CombatTab:Section({ Title = "Protection", Opened = true })
+	ProtSec:Toggle({ Title = "AntiFling", Value = false, Flag = "afOn", Callback = function(v) if v ~= afOn then toggleAntiFling() end end })
+
+	local MoveSec = PlayerTab:Section({ Title = "Movement", Opened = true })
+	MoveSec:Slider({ Title = "WalkSpeed", Step = 1, Value = { Min = 1, Max = 999, Default = ws }, Flag = "ws", Callback = function(v) ws = math.floor(v) saveFile(SPF, ws) applySpd() end })
+	MoveSec:Slider({ Title = "JumpPower", Step = 1, Value = { Min = 1, Max = 999, Default = jp }, Flag = "jp", Callback = function(v) jp = math.floor(v) saveFile(JPF, jp) applySpd() end })
+	MoveSec:Toggle({ Title = "Speedglitch", Desc = "Jump to fling forward", Value = false, Flag = "glOn", Callback = function(v) if v ~= glOn then toggleGlitch() end end })
+	MoveSec:Slider({ Title = "Glitch Speed", Step = 5, Value = { Min = 16, Max = 200, Default = 50 }, Flag = "glSpd", Callback = function(v) glSpd = math.floor(v) end })
+	MoveSec:Toggle({ Title = "Fly", Value = false, Flag = "flyOn", Callback = function(v) if v ~= flyOn then toggleFly() end end })
+	MoveSec:Slider({ Title = "Fly Speed", Step = 5, Value = { Min = 1, Max = 300, Default = flyspd }, Flag = "flyspd", Callback = function(v) flyspd = math.floor(v) end })
+	local BodySec = PlayerTab:Section({ Title = "Body", Opened = true })
+	BodySec:Toggle({ Title = "Noclip", Value = false, Flag = "ncOn", Callback = function(v) if v ~= ncOn then toggleNoclip() end end })
+	BodySec:Toggle({ Title = "Inf Jump", Value = false, Flag = "ijOn", Callback = function(v) if v ~= ijOn then toggleInfJump() end end })
+	BodySec:Toggle({ Title = "Invisible", Value = false, Flag = "invOn", Callback = function(v) if v ~= invOn then toggleInvis() end end })
+
+	local EspSec = VisualTab:Section({ Title = "ESP", Opened = true })
+	EspSec:Toggle({ Title = "Role ESP (all)", Desc = "Paints everyone by role", Icon = "eye", Value = false, Flag = "espAll", Callback = function(v) espAll = v updateESP() end })
+	EspSec:Toggle({ Title = "Murderer (red)", Desc = "Red knife holder", Icon = "sword", Value = false, Flag = "espM", Callback = function(v) espM = v updateESP() end })
+	EspSec:Toggle({ Title = "Sheriff (blue)", Desc = "Blue gun holder", Icon = "shield", Value = false, Flag = "espS", Callback = function(v) espS = v updateESP() end })
+	EspSec:Toggle({ Title = "Innocent (green)", Desc = "Green unarmed", Icon = "user", Value = false, Flag = "espI", Callback = function(v) espI = v updateESP() end })
+
+	FarmTab:Section({ Title = "Coins", Opened = true })
+	FarmTab:Toggle({ Title = "AutoCollect Coins", Desc = "Tweens to coins under 30 studs", Icon = "coins", Value = false, Flag = "acOn", Callback = function(v) if v ~= acOn then toggleAutoCollect() end end })
+	FarmTab:Toggle({ Title = "AutoCoins", Desc = "Pulls all coins to you, loops", Icon = "coins", Value = false, Flag = "ac2On", Callback = function(v) if v ~= ac2On then toggleAutoCoins() end end })
+
+	local TpSec = MiscTab:Section({ Title = "Teleport", Opened = true })
+	TpSec:Button({ Title = "TP Murderer", Icon = "map-pin", Callback = function() tpToMurder() end })
+	TpSec:Button({ Title = "TP Gun Drop", Icon = "map-pin", Callback = function() tpToGun() end })
+	TpSec:Button({ Title = "TP Lobby", Icon = "map-pin", Callback = function() tpToLobby() end })
+	TpSec:Button({ Title = "TP Map", Icon = "map-pin", Callback = function() tpToMap() end })
+	local tpName = ""
+	TpSec:Input({ Title = "Player Name", Value = "", Callback = function(v) tpName = v end })
+	TpSec:Button({ Title = "TP Player", Callback = function() tpToPlayer(tpName) end })
+	local ServSec = MiscTab:Section({ Title = "Server", Opened = true })
+	ServSec:Button({ Title = "Rejoin", Icon = "refresh-cw", Callback = function() doRejoin() end })
+	ServSec:Button({ Title = "Server Hop", Icon = "shuffle", Callback = function() doServerhop() end })
+	ServSec:Toggle({ Title = "AntiAFK", Desc = "No idle kick", Icon = "clock", Value = false, Flag = "aafkOn", Callback = function(v) if v ~= aafkOn then toggleAntiAFK() end end })
+	ServSec:Toggle({ Title = "AntiLag", Desc = "Strip textures", Icon = "gauge", Value = false, Flag = "alagOn", Callback = function(v) if v ~= alagOn then toggleAntiLag() end end })
+
+	local UiSec = SettingsTab:Section({ Title = "UI", Opened = true })
+	UiSec:Keybind({ Title = "UI Toggle Key", Value = "K", Callback = function(v) pcall(function() Window:SetToggleKey(Enum.KeyCode[v]) end) end })
+	UiSec:Dropdown({ Title = "Theme", Values = { "Catsix Black", "Dark", "Light" }, Value = "Catsix Black", Callback = function(v) pcall(function() WindUI:SetTheme(v) end) end })
+ 	UiSec:Toggle({ Title = "Transparent", Value = true, Callback = function(v) pcall(function()
+		if Window.ToggleTransparency then Window:ToggleTransparency(v)
+		elseif Window.SetTransparent then Window:SetTransparent(v)
+		elseif Window.SetTransparency then Window:SetTransparency(v) end
+	end) end })
+	local CusSec = SettingsTab:Section({ Title = "Customize", Opened = true })
+	CusSec:Colorpicker({ Title = "Accent Color", Default = Color3.fromRGB(255,255,255), Callback = function(c)
+		pcall(function()
+			WindUI:AddTheme({
+				Name = "Catsix Custom",
+				Accent = c,
+				Background = Color3.fromHex("#0a0a0a"),
+				Outline = Color3.fromHex("#1c1c1c"),
+				Text = Color3.fromHex("#ffffff"),
+				Placeholder = Color3.fromHex("#7a7a7a"),
+				Button = Color3.fromHex("#171717"),
+				Icon = Color3.fromHex("#ffffff"),
+			})
+			WindUI:SetTheme("Catsix Custom")
+		end)
+	end })
+	CusSec:Button({ Title = "Reset Theme", Callback = function() pcall(function() WindUI:SetTheme("Catsix Black") end) end })
+	local CfgSec = SettingsTab:Section({ Title = "Config", Opened = true })
+	CfgSec:Button({ Title = "Save Config", Icon = "save", Callback = function() saveConfig() end })
+	CfgSec:Button({ Title = "Load Config", Icon = "folder-open", Callback = function() loadConfig() end })
+	CfgSec:Button({ Title = "Unload Hub", Icon = "trash", Callback = function()
+		for _, c in ipairs(conns) do pcall(function() c:Disconnect() end) end
+		conns = {}
+		pcall(function() Window:Destroy() end)
+	end })
+
+	HomeTab:Select()
+	WindUI:Notify({ Title = "Catsix", Content = "Loaded. E shoot, G grab.", Duration = 4, Icon = "cat" })
+end
+
+lp.Chatted:Connect(function(msg) runCmd(msg) end)
+
+UIS.InputBegan:Connect(function(input, gpe)
+	if gpe then return end
+	if input.KeyCode == Enum.KeyCode.E then shootMurder()
+	elseif input.KeyCode == Enum.KeyCode.G then grabGun() end
+end)
+
+lp.CharacterAdded:Connect(function(c)
+	task.wait(0.5)
+	applySpd()
+	if ncOn then
+		applyNcToChar(c)
+		c.DescendantAdded:Connect(function(d)
+			if ncOn and d:IsA("BasePart") then d.CanCollide = false end
+		end)
+	end
+	if flyOn then flyOn = false toggleFly() end
+	if invOn then invOn = false toggleInvis() end
+end)
+
+Players.PlayerRemoving:Connect(function(p)
+	if espCache[p] then pcall(function() espCache[p]:Destroy() end) espCache[p] = nil end
+end)
+
+startSpdLoop()
+startEspLoop()
+WindUI:Popup({
+	Title = "Catsix MMV",
+	Icon = "cat",
+	Content = "Catsix MMV loaded. Press Continue.",
+	Buttons = {
+		{
+			Title = "Continue",
+			Icon = "arrow-right",
+			Variant = "Primary",
+			Callback = function() BuildUI() end,
+		},
+	},
+})
